@@ -10,10 +10,20 @@ engine (Stage 1) exists to actually run something.
 matters here: FastAPI/Starlette matches an exact path before it falls
 through to a mount, so defining ``/health`` before mounting the static
 files at ``/`` is enough to keep it from being shadowed.
+
+``rss_mb`` on ``/health`` exists only to get a real memory number onto the
+free Render tier, which has no metrics dashboard for compute plans below
+the paid tiers (confirmed 25 Sep 2026 -- the Metrics page shows an
+"upgrade to view application metrics like memory and CPU usage" banner
+instead of a graph). ``resource`` is POSIX-only (no such module on
+Windows, where this is developed), so it is imported defensively and
+``rss_mb`` is ``None`` on a platform without it; the Docker image is
+always Linux, so the number that matters is always real.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,9 +32,22 @@ from fastapi.staticfiles import StaticFiles
 
 from daysofcover import __version__
 
+if sys.platform != "win32":
+    import resource
+else:  # pragma: no cover - exercised on the Windows dev machine only
+    resource = None
+
 WEB_STATIC_DIR = Path(__file__).resolve().parent.parent / "web_static"
 
 app = FastAPI(title="daysofcover", version=__version__)
+
+
+def _rss_mb() -> float | None:
+    if resource is None:
+        return None
+    # ru_maxrss is KB on Linux, bytes on macOS; the Docker image only ever
+    # runs on the Linux base in the Dockerfile, so KB -> MB is safe here.
+    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
 
 
 @app.get("/health")
@@ -34,6 +57,7 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "hosted": True,
         "web_static_present": WEB_STATIC_DIR.is_dir(),
+        "rss_mb": _rss_mb(),
     }
 
 

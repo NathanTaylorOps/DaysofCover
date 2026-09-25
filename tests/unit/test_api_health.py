@@ -19,3 +19,6 @@ def test_health_returns_ok_json() -> None:
     assert body["status"] == "ok"
     assert body["version"] == __version__
     assert isinstance(body["web_static_present"], bool)
+    # rss_mb is None on Windows (no `resource` module there); the Docker
+    # image is always Linux, so it is always a real number in production.
+    assert body["rss_mb"] is None or (isinstance(body["rss_mb"], float) and body["rss_mb"] > 0)
