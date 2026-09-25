@@ -1,0 +1,21 @@
+{
+  "name": "daysofcover-web",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Svelte front end for Days of Cover. Stage 0: a hello-world placeholder page, built in CI and baked into the Docker image. The real UI is Stage 6.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@tsconfig/svelte": "^5.0.4",
+    "svelte": "^5.1.16",
+    "svelte-check": "^4.1.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}
