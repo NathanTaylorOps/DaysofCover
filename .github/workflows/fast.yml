@@ -1,0 +1,92 @@
+﻿name: fast
+
+# Runs on every push and pull request. Target: under three minutes.
+# Lint, format, types, unit tests, wheel build and a smoke test of the built wheel.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  denylist:
+    name: employer deny-list
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Grep tracked files and commit messages against the deny-list
+        env:
+          DENYLIST_REGEX: ${{ secrets.DENYLIST_REGEX }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DENYLIST_REGEX:-}" ]; then
+            echo "::error::DENYLIST_REGEX secret is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          printf '%s\n' "$DENYLIST_REGEX" | sed 's/\r$//' | grep -v '^[[:space:]]*$' > /tmp/denylist.txt
+          status=0
+          git ls-files -z | xargs -0 grep -IinE -f /tmp/denylist.txt -- 2>/dev/null && status=1 || true
+          if [ -n "${BEFORE:-}" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            range="$BEFORE..HEAD"
+          else
+            range="HEAD"
+          fi
+          git log --format='%an %ae %cn %ce %s%n%b' "$range" | grep -inE -f /tmp/denylist.txt && status=1 || true
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Deny-list match found (see above). Nothing from this push may be merged."
+            exit 1
+          fi
+          echo "Deny-list clean."
+
+  check:
+    name: lint, types, tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked --python ${{ matrix.python }}
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest -m "not validation"
+
+  wheel:
+    name: build and smoke-test the wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Build
+        run: uv build
+      - name: Install the wheel into a clean environment and run it
+        run: |
+          set -euo pipefail
+          whl=$(ls dist/*.whl)
+          uv run --isolated --no-project --python 3.12 --with "$whl" -- daysofcover --version | tee out.txt
+          grep -q "^daysofcover 0\." out.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

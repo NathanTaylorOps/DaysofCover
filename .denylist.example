@@ -1,0 +1,13 @@
+# Local deny-list for the pre-commit hook in scripts/check_denylist.py.
+#
+# Copy this file to .denylist (same folder) and replace the placeholders.
+# .denylist is gitignored and must never be committed. One regular expression
+# per line, matched case-insensitively against every staged file, every staged
+# path, and git's user.name and user.email. Keep it to names that must never
+# appear in this repo: former employers, their products, colleagues, and any
+# work email address.
+#
+# Examples of the shape (these placeholders are safe to leave in):
+example-employer-name
+example-product-name
+[a-z.]+@example-employer\.com

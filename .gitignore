@@ -24,9 +24,9 @@ web/.svelte-kit/
 .env.*
 !.env.example
 
-# Local-only tooling (never committed)
+# Local-only tooling (never committed); the .example template is committed
 .denylist
-.denylist.*
+!.denylist.example
 
 # Editors and OS
 .vscode/
