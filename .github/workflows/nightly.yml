@@ -1,0 +1,68 @@
+name: nightly
+
+# Scheduled security and dependency checks. Runs once a day and can also be
+# triggered manually.
+#
+# The plan's nightly job list also includes performance benchmarks at 40,
+# 100 and 200 nodes with scaling-ratio gates, a memory (tracemalloc)
+# assertion, and npm audit. Those are added once there is an engine to
+# benchmark (Stage 1) and a Node/web toolchain to audit (Stage 6); adding
+# them now would just be jobs with nothing real to measure.
+
+on:
+  schedule:
+    - cron: "17 15 * * *" # 15:17 UTC daily (arbitrary offset to avoid the
+                            # top-of-hour scheduling crowd)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3
+
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Audit dependencies
+        run: uv run --with pip-audit pip-audit --strict
+
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Generate CycloneDX SBOM
+        run: |
+          set -euo pipefail
+          uv export --locked --no-dev --format requirements-txt > requirements.txt
+          uv run --with cyclonedx-bom cyclonedx-py requirements -o sbom.json requirements.txt
+      - uses: actions/upload-artifact@v5
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 30

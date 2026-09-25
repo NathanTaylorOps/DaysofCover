@@ -1,0 +1,92 @@
+name: full
+
+# Runs on pull requests and on push to main. Deeper checks than `fast`:
+# the validation tier, coverage and a licenses manifest.
+#
+# Deliberately narrow for now: the plan's full job list also includes
+# Vitest, Playwright against the built wheel, a Docker image build and
+# GHCR push, an example-regeneration diff and a bundle-size check. Those
+# are added as the pieces they depend on land (the Dockerfile and web/
+# scaffold in a later Stage 0 session, the frontend in Stage 6) rather
+# than stubbed in now as jobs with nothing real to check.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validation:
+    name: validation tier
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Run validation-marked tests
+        run: |
+          set -euo pipefail
+          set +e
+          uv run pytest -m validation
+          status=$?
+          set -e
+          # Exit code 5 = "no tests collected", expected until Stage 1 adds
+          # validation cases against the engine.
+          if [ "$status" -ne 0 ] && [ "$status" -ne 5 ]; then
+            exit "$status"
+          fi
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked --group dev
+      - name: Add coverage tooling
+        run: uv add --dev --no-sync pytest-cov && uv sync --locked --group dev
+      - name: Run tests with coverage
+        run: uv run pytest -m "not validation" --cov=daysofcover --cov-report=term-missing --cov-report=xml --cov-fail-under=0
+        # fail-under starts at 0: a real floor is set at the end of Stage 1
+        # once the engine exists, then ratcheted up per stage (see the
+        # build plan's CI section).
+      - uses: actions/upload-artifact@v5
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 7
+
+  licenses:
+    name: third-party licenses manifest
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Generate THIRD_PARTY_LICENSES.md
+        run: |
+          set -euo pipefail
+          uv run --with pip-licenses pip-licenses --format=markdown \
+            --with-urls --with-license-file --no-license-path \
+            > THIRD_PARTY_LICENSES.md
+      - uses: actions/upload-artifact@v5
+        with:
+          name: third-party-licenses
+          path: THIRD_PARTY_LICENSES.md
+          retention-days: 7
