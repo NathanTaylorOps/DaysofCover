@@ -4,9 +4,14 @@ import typer
 
 from daysofcover import __version__
 
+HELP = (
+    "Supply chain stress test: how long can you keep shipping if a supplier, "
+    "port or route goes down, and what is the cheapest fix."
+)
+
 app = typer.Typer(
     name="daysofcover",
-    help="Supply chain stress test: how long can you keep shipping if a supplier, port or route goes down, and what is the cheapest fix.",
+    help=HELP,
     add_completion=False,
     no_args_is_help=True,
 )
