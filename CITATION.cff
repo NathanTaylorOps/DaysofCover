@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use Days of Cover in your work, please cite it as below."
+title: "Days of Cover: a supply chain stress test"
+abstract: "How long can you keep shipping if a supplier, port or route goes down, and what is the cheapest fix. A discrete-event simulation of a multi-tier supply network under disruption with time-to-survive and time-to-recover analysis."
+type: software
+authors:
+  - family-names: Taylor
+    given-names: Nathan
+version: 0.0.1
+date-released: 2026-09-25
+license: MIT
+repository-code: "https://github.com/NathanTaylorOps/daysofcover"
+keywords:
+  - supply chain
+  - resilience
+  - discrete-event simulation
+  - time to survive
+  - time to recover

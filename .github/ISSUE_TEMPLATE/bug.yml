@@ -1,0 +1,28 @@
+name: Bug
+description: Something gives the wrong answer, crashes or will not install.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `daysofcover --version`, or the commit SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, what you got. Paste the exact command and output.
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: The scenario or network JSON, or the steps that reproduce it. Use the synthetic examples where you can; never paste a real company's data.
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, and whether this was the CLI, the API or the hosted demo.

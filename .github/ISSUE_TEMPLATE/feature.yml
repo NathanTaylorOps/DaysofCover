@@ -1,0 +1,23 @@
+name: Feature or change
+description: Propose a change. Check the release plan first; scope is fixed per release.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question this would answer
+      description: In the words a general manager or operations lead would use. What decision does it support?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What would change, where in the tool it would live, and how a user would know it worked.
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: Method and references
+      description: If it changes a number the tool shows, name the method and where it is documented.
