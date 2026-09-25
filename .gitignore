@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.uv-cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+web/dist/
+web/.svelte-kit/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local-only tooling (never committed)
+.denylist
+.denylist.*
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Playwright
+test-results/
+playwright-report/

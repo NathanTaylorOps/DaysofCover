@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "daysofcover"
+version = "0.0.1"
+description = "Supply chain stress test: how long can you keep shipping if a supplier, port or route goes down, and what is the cheapest fix."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Nathan Taylor" }]
+keywords = ["supply-chain", "resilience", "simulation", "stress-test", "time-to-survive", "time-to-recover"]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Intended Audience :: Manufacturing",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
+]
+dependencies = [
+  "typer>=0.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/NathanTaylorOps/daysofcover"
+Repository = "https://github.com/NathanTaylorOps/daysofcover"
+Issues = "https://github.com/NathanTaylorOps/daysofcover/issues"
+
+[project.scripts]
+daysofcover = "daysofcover.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/daysofcover"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/daysofcover", "README.md", "LICENSE", "pyproject.toml"]
