@@ -5,7 +5,7 @@ Days of Cover is a solo project with a public plan, so contributions are welcome
 ## Setup
 
 ```
-git clone https://github.com/NathanTaylorOps/daysofcover.git
+git clone https://github.com/NathanTaylorOps/DaysofCover.git
 cd daysofcover
 uv sync
 uv tool install pre-commit

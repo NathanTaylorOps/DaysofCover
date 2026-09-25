@@ -11,4 +11,4 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - `fast` CI workflow: lint, format, types, tests on Python 3.12 and 3.13, wheel build and smoke test.
 - Project governance: licence, citation file, security policy, contributing guide, code of conduct, issue and pull request templates.
 
-[Unreleased]: https://github.com/NathanTaylorOps/daysofcover/commits/main
+[Unreleased]: https://github.com/NathanTaylorOps/DaysofCover/commits/main
