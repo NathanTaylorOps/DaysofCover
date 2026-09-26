@@ -11,6 +11,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Per-shipment in-transit records (crossing allowed, independent lognormal lead times), validated against validation cases 5 and 6.
 - Order-pausing disruptions on a base-stock node (a two-state Markov process), validated against validation case 4.
 - A serial multi-node chain (order-up-to with a moving-average forecast), validated against validation case 11 (bullwhip).
+- A linear production-capacity ramp after a restart, validated against validation case 12 (ramp bounds).
 
 ## [0.0.1] - 2026-09-26
 
