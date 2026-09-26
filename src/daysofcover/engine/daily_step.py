@@ -41,11 +41,31 @@ comes back as zero (an MOQ the desired order can't clear, or a week
 already fully used), no shipment is placed at all and ``on_order`` is
 left untouched -- the plant simply tries again on the next review day.
 
-Deliberately out of scope, not forgotten: splitting an order across a
-dual-sourced part's suppliers (session 16's ``supplier_split_ratios``,
-not yet wired in -- this still orders on a single lane), and the
-per-customer backlog ledger the paragraph above describes, are still
-ahead.
+Session 21 wires in the last of session 16's three allocation
+functions still sitting unused: :func:`daysofcover.engine.allocation.
+supplier_split_ratios`. A dual-sourced part's reorder now splits across
+every one of its suppliers' own lanes according to that function's
+ratios -- normally the part's fixed ``split_ratio``\\ s, or, once the
+primary has been down for at least its own ``detect_delay_days``, a
+contingent full switch to the backup or backups. This is the single-
+lane reorder from sessions 19 and 20 generalised to N suppliers, not
+replaced by it: leaving the new ``component_suppliers`` parameter
+``None`` (the default) keeps ordering on the single ``inbound_lane_id``
+exactly as every earlier session wrote it. When it is given, each
+supplier's own share is independently capped by that supplier's own
+lane's MOQ and remaining weekly capacity -- one supplier's lane being
+tight this week never holds back another's -- and ``inbound_lane_id``
+plays no part in either receiving or ordering; every lane in ``lane_by
+_supplier`` is read instead.
+
+Deliberately out of scope, not forgotten: the per-customer backlog
+ledger the paragraph above describes is still ahead, and so is
+*detecting* a primary supplier as down in the first place -- that is a
+disruption-modelling question (hazard groups, downtime semantics),
+still ahead per the build plan's own milestone 3. This session only
+wires in what happens once a caller already knows ``primary_down_since
+_day``, exactly as :func:`supplier_split_ratios` itself only answers
+that question given whatever the caller has already decided.
 """
 
 from __future__ import annotations
@@ -59,6 +79,7 @@ from daysofcover.engine.allocation import (
     allocate_by_backlog_proportion,
     allocate_by_margin_priority,
     allocate_finished_goods_to_orders,
+    supplier_split_ratios,
 )
 from daysofcover.engine.production import (
     ProductionQueue,
@@ -67,7 +88,7 @@ from daysofcover.engine.production import (
 )
 from daysofcover.engine.shipments import NetworkShipments, cap_order_quantity
 from daysofcover.engine.state import NetworkState
-from daysofcover.models.network import BOMLine
+from daysofcover.models.network import BOMLine, SupplySource
 
 _UNLIMITED = float("inf")
 
@@ -138,6 +159,9 @@ def advance_one_day(
     order_up_to: float | None = None,
     review_period_days: int | None = None,
     rng: np.random.Generator | None = None,
+    component_suppliers: list[SupplySource] | None = None,
+    lane_by_supplier: dict[str, str] | None = None,
+    primary_down_since_day: int | None = None,
 ) -> DailyStepReport:
     """Advance one plant, across every SKU in ``sku_specs``, by one day.
 
@@ -151,23 +175,43 @@ def advance_one_day(
     plant's own periodic-review reordering of ``component_part_id``,
     described in the module docstring; leaving either as ``None`` (the
     default) leaves reordering off entirely, exactly as every earlier
-    session called this function. When reordering is on and today is a
-    review day, ``rng`` is required if the desired order (after the
-    inbound lane's MOQ and remaining weekly capacity cap it) comes out
-    positive -- it is the lane's own lognormal lead-time draw, the same
-    as any other call to
-    :meth:`~daysofcover.engine.shipments.NetworkShipments.ship`.
+    session called this function.
+
+    ``component_suppliers`` (``component_part_id``'s own
+    :attr:`daysofcover.models.network.Part.suppliers` list) is ``None``
+    by default, which keeps reordering on the single ``inbound_lane_id``
+    exactly as sessions 19 and 20 wrote it. Passing it turns on the
+    dual-source split described in the module docstring instead, and
+    requires ``lane_by_supplier`` (each supplier's node id mapped to the
+    lane it ships ``component_part_id`` on into this plant); in that
+    case ``inbound_lane_id`` is ignored entirely, for both receiving and
+    ordering. ``primary_down_since_day`` is passed straight through to
+    :func:`daysofcover.engine.allocation.supplier_split_ratios`.
+
+    When reordering is on and today is a review day, ``rng`` is required
+    if any lane's own share of the desired order (after that lane's own
+    MOQ and remaining weekly capacity cap it) comes out positive -- it
+    is that lane's own lognormal lead-time draw, the same as any other
+    call to :meth:`~daysofcover.engine.shipments.NetworkShipments.ship`.
 
     See the module docstring for order of operations.
     """
     plant = state.node_index(plant_node_id)
     component_idx = state.part_index(component_part_id)
 
+    # component_suppliers on means every lane in lane_by_supplier, and
+    # inbound_lane_id is ignored entirely -- see the module docstring.
+    receive_lane_ids: list[str] = (
+        list(lane_by_supplier.values())
+        if component_suppliers is not None and lane_by_supplier is not None
+        else ([inbound_lane_id] if inbound_lane_id is not None else [])
+    )
     components_received = 0.0
-    if inbound_lane_id is not None:
-        components_received = shipments.receive(
-            lane_id=inbound_lane_id, part_id=component_part_id, current_day=current_day
+    for lane_id in receive_lane_ids:
+        components_received += shipments.receive(
+            lane_id=lane_id, part_id=component_part_id, current_day=current_day
         )
+    if receive_lane_ids:
         state.on_hand[plant, component_idx] += components_received
         state.on_order[plant, component_idx] = max(
             0.0, state.on_order[plant, component_idx] - components_received
@@ -305,18 +349,59 @@ def advance_one_day(
     #    inventory position -- on-hand plus whatever is already on
     #    order, so a shipment already in the pipeline is never ordered
     #    again. Off entirely when order_up_to or review_period_days is
-    #    None, or today is not a review day. The desired quantity is
-    #    then capped against the inbound lane's own moq and remaining
-    #    weekly capacity -- a desired order that can't clear the moq
-    #    even after capacity capping it is deferred to zero rather than
-    #    placed as a partial, sub-moq shipment.
+    #    None, or today is not a review day. component_suppliers is
+    #    None (the default): the single-lane reorder from sessions 19
+    #    and 20, unchanged -- the desired quantity capped against
+    #    inbound_lane_id's own moq and remaining weekly capacity, a
+    #    desired order that can't clear the moq even after capacity
+    #    capping it deferred to zero rather than placed as a partial,
+    #    sub-moq shipment. component_suppliers given: the same desired
+    #    quantity is split across every supplier by
+    #    supplier_split_ratios, then each supplier's own share is
+    #    independently capped against that supplier's own lane -- one
+    #    supplier's tight lane never holds back another's.
     component_ordered = 0.0
-    if (
+    is_review_day = (
         order_up_to is not None
         and review_period_days is not None
-        and inbound_lane_id is not None
         and current_day % review_period_days == 0
-    ):
+    )
+    if is_review_day and component_suppliers is not None:
+        assert order_up_to is not None  # implied by is_review_day
+        if lane_by_supplier is None:
+            raise ValueError("lane_by_supplier is required when component_suppliers is given")
+        position = float(state.on_hand[plant, component_idx] + state.on_order[plant, component_idx])
+        desired_quantity = max(0.0, order_up_to - position)
+        ratios = supplier_split_ratios(
+            suppliers=component_suppliers,
+            primary_down_since_day=primary_down_since_day,
+            current_day=current_day,
+        )
+        for supplier in component_suppliers:
+            ratio = ratios.get(supplier.node_id, 0.0)
+            if ratio <= 0:
+                continue
+            lane_id = lane_by_supplier[supplier.node_id]
+            lane_shipments = shipments.lanes[lane_id]
+            supplier_ordered = cap_order_quantity(
+                desired_quantity=desired_quantity * ratio,
+                moq=lane_shipments.lane.moq,
+                capacity_remaining=lane_shipments.capacity_remaining(current_day=current_day),
+            )
+            if supplier_ordered > 0:
+                if rng is None:
+                    raise ValueError("rng is required when a review day's order-up-to is positive")
+                shipments.ship(
+                    lane_id=lane_id,
+                    part_id=component_part_id,
+                    quantity=supplier_ordered,
+                    order_day=current_day,
+                    rng=rng,
+                )
+                state.on_order[plant, component_idx] += supplier_ordered
+                component_ordered += supplier_ordered
+    elif is_review_day and inbound_lane_id is not None:
+        assert order_up_to is not None  # implied by is_review_day
         position = float(state.on_hand[plant, component_idx] + state.on_order[plant, component_idx])
         desired_quantity = max(0.0, order_up_to - position)
         lane_shipments = shipments.lanes[inbound_lane_id]

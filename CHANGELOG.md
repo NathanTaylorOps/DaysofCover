@@ -22,6 +22,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Multiple customers competing for one SKU's scarce finished goods in the daily-step loop, served by priority override then FIFO by order date.
 - The plant's own periodic-review order-up-to reordering of a component, wired into the daily-step loop against the true on-hand-plus-on-order inventory position.
 - MOQ and per-lane weekly capacity caps on that reorder quantity, deferring an order to zero rather than placing a partial, sub-MOQ shipment.
+- A dual-sourced part's reorder split across every supplier's own lane, following the fixed split ratio or a contingent full switch to the backup, each supplier's share capped independently by its own lane.
 
 ## [0.0.1] - 2026-09-26
 

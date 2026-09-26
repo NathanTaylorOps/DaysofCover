@@ -1,8 +1,9 @@
-"""Stage 1, sessions 15, 17, 18, 19 and 20: the daily-step loop, multiple
+"""Stage 1, sessions 15, 17 through 21: the daily-step loop, multiple
 SKUs sharing a scarce component, multiple customers competing for one
 SKU's scarce finished goods, the plant's own periodic-review reordering
-of that scarce component, and finally that reorder capped by the
-inbound lane's own MOQ and weekly capacity.
+of that scarce component, that reorder capped by the inbound lane's own
+MOQ and weekly capacity, and finally that same reorder split across a
+dual-sourced part's suppliers.
 
 Not a validation case: session 15's single test is still the hand-traced
 baseline (every number reproduced exactly, now through the multi-SKU
@@ -16,7 +17,11 @@ supply runs short, that it never double-orders a shipment already on
 order, and that a non-review day places no order at all. Session 20's
 tests check that same reorder capped against the lane's remaining
 weekly capacity, deferred entirely below the lane's MOQ, and deferred
-to zero when capacity can't even clear the MOQ.
+to zero when capacity can't even clear the MOQ. Session 21's tests
+check the dual-source split itself: the fixed ratio in the ordinary
+case, the contingent full switch to the backup once the primary has
+been down long enough, and one supplier's own lane capacity capping
+only that supplier's share.
 """
 
 from __future__ import annotations
@@ -555,3 +560,163 @@ def test_reorder_below_moq_and_capacity_together_is_deferred_to_zero() -> None:
     assert report.component_ordered == 0.0
     assert state.on_order[plant, component_idx] == 0.0
     assert state.on_hand[plant, component_idx] == 0.0
+
+
+def _dual_source_network(
+    *,
+    primary_split: float = 0.7,
+    backup_split: float = 0.3,
+    detect_delay_days: float = 2.0,
+    primary_capacity: float = 1000.0,
+    backup_capacity: float = 1000.0,
+) -> Network:
+    supplier_primary = Node(
+        id="supplier-primary", name="Supplier Primary", type=NodeType.SUPPLIER, region="AU"
+    )
+    supplier_backup = Node(
+        id="supplier-backup", name="Supplier Backup", type=NodeType.SUPPLIER, region="AU"
+    )
+    plant = Node(id="plant-1", name="Plant One", type=NodeType.PLANT, region="AU")
+    lane_primary = Lane(
+        id="lane-primary",
+        origin_id="supplier-primary",
+        destination_id="plant-1",
+        mode=LaneMode.OCEAN,
+        lead_time_days_median=2.0,
+        lead_time_days_sigma=0.0,
+        capacity_per_week=primary_capacity,
+        unit_cost=1.0,
+        currency="AUD",
+        allow_crossing=False,
+    )
+    lane_backup = Lane(
+        id="lane-backup",
+        origin_id="supplier-backup",
+        destination_id="plant-1",
+        mode=LaneMode.OCEAN,
+        lead_time_days_median=2.0,
+        lead_time_days_sigma=0.0,
+        capacity_per_week=backup_capacity,
+        unit_cost=1.0,
+        currency="AUD",
+        allow_crossing=False,
+    )
+    part_a = Part(
+        id="part-a",
+        name="Part A",
+        suppliers=[
+            SupplySource(
+                node_id="supplier-primary",
+                split_ratio=primary_split,
+                is_primary=True,
+                detect_delay_days=detect_delay_days,
+            ),
+            SupplySource(node_id="supplier-backup", split_ratio=backup_split, is_primary=False),
+        ],
+        unit_cost=1.0,
+        currency="AUD",
+    )
+    return Network(
+        base_currency="AUD",
+        nodes=[supplier_primary, supplier_backup, plant],
+        lanes=[lane_primary, lane_backup],
+        parts=[part_a],
+        skus=[],
+    )
+
+
+def test_dual_source_reorder_splits_by_the_parts_fixed_ratio() -> None:
+    network = _dual_source_network(primary_split=0.7, backup_split=0.3)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+    part_a = network.parts[0]
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[],
+        current_day=0,
+        order_up_to=100.0,
+        review_period_days=1,
+        rng=rng,
+        component_suppliers=part_a.suppliers,
+        lane_by_supplier={"supplier-primary": "lane-primary", "supplier-backup": "lane-backup"},
+    )
+
+    # nothing on hand or on order yet: the full 100-unit target splits 70/30
+    assert report.component_ordered == 100.0
+    assert shipments.lanes["lane-primary"]._fifo["part-a"][0][1] == 70.0
+    assert shipments.lanes["lane-backup"]._fifo["part-a"][0][1] == 30.0
+    assert state.on_order[plant, component_idx] == 100.0
+
+
+def test_dual_source_reorder_switches_entirely_to_backup_once_primary_is_down_long_enough() -> None:
+    network = _dual_source_network(primary_split=0.7, backup_split=0.3, detect_delay_days=2.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+    part_a = network.parts[0]
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[],
+        current_day=5,
+        order_up_to=100.0,
+        review_period_days=1,
+        rng=rng,
+        component_suppliers=part_a.suppliers,
+        lane_by_supplier={"supplier-primary": "lane-primary", "supplier-backup": "lane-backup"},
+        primary_down_since_day=3,  # 5 - 3 = 2 >= detect_delay_days: switched
+    )
+
+    # the whole order goes to the backup; the primary's lane gets nothing
+    assert report.component_ordered == 100.0
+    assert "part-a" not in shipments.lanes["lane-primary"]._fifo
+    assert shipments.lanes["lane-backup"]._fifo["part-a"][0][1] == 100.0
+    assert state.on_order[plant, component_idx] == 100.0
+
+
+def test_dual_source_reorder_caps_each_suppliers_share_by_its_own_lane_only() -> None:
+    # the backup's lane can only move 10 units a week; the primary's is
+    # untouched by that limit -- one tight lane never holds back the other
+    network = _dual_source_network(primary_split=0.7, backup_split=0.3, backup_capacity=10.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+    part_a = network.parts[0]
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[],
+        current_day=0,
+        order_up_to=100.0,
+        review_period_days=1,
+        rng=rng,
+        component_suppliers=part_a.suppliers,
+        lane_by_supplier={"supplier-primary": "lane-primary", "supplier-backup": "lane-backup"},
+    )
+
+    # primary's desired 70-unit share ships in full; backup's desired
+    # 30-unit share is capped at its lane's 10-unit weekly capacity
+    assert report.component_ordered == 80.0
+    assert shipments.lanes["lane-primary"]._fifo["part-a"][0][1] == 70.0
+    assert shipments.lanes["lane-backup"]._fifo["part-a"][0][1] == 10.0
+    assert state.on_order[plant, component_idx] == 80.0
