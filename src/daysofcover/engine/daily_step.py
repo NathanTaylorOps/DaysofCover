@@ -1,23 +1,28 @@
 """One day of the world: composing state, shipments, production and allocation.
 
-Session 17 took the first item off this composition's own deferred list,
-"multiple SKUs sharing a scarce component". This session takes the
-second: "multiple customers competing for one SKU's scarce finished
-goods", wiring in session 16's
-:func:`daysofcover.engine.allocation.allocate_finished_goods_to_orders`.
-Today's demand for a SKU is now a list of that SKU's :class:`~daysofcover
-.engine.allocation.CustomerOrder`, not a single number -- the allocation
-serves them by ascending priority first, then FIFO by order date within
-the same priority, exactly as session 16 specified it, before today's
-new production is decided.
+Session 17 wired in the SKU-sharing-a-component allocation rule; session
+18 wired in the customer-competing-for-finished-goods allocation rule.
+This session takes the last item off that pair's original deferred
+list: "reordering components to replenish the plant". Until now, the
+plant's on-hand component stock only ever moved because a caller called
+:meth:`daysofcover.engine.shipments.NetworkShipments.ship` directly --
+every test so far has played that role itself; the plant never decided
+to place an order. This session gives it that decision, in the simplest
+form the build plan's own words support: "ordering reviewed weekly" --
+a periodic-review, order-up-to policy, the same shape as session 12's
+spike (:func:`daysofcover.engine.single_node.simulate_periodic_order_up_to`),
+now placing a real shipment on a real lane instead of pushing a number
+into a bare NumPy pipeline.
 
-Order of operations is otherwise unchanged: shipments arrive before
-anything else, so today's arrivals count as available components; each
-SKU's due production completes into finished goods before demand is
-realised, so a batch finishing today can be sold the same day; only then
-does the day decide how much of today's *new* production each SKU gets
-to start, going through session 17's component allocation when more
-than one SKU shares ``component_part_id``.
+The order-up-to decision is made after everything else that day --
+shipments have already arrived, every SKU's production for the day has
+already started -- so it sees the day's true ending inventory position:
+on-hand plus what's already on order (:attr:`daysofcover.engine.state.
+NetworkState.on_order`, sized in session 12 but unused until now), never
+double-ordering for a shipment already in the pipeline. On a non-review
+day, or when ``order_up_to``/``review_period_days`` are left ``None``
+(the default), nothing changes and every earlier session's calls still
+work exactly as they always have.
 
 Backlog is still tracked only in aggregate per (node, sku), not per
 customer -- an order that goes unfulfilled today adds to the SKU's one
@@ -26,14 +31,18 @@ later day's surplus stock cannot be preferentially repaid to the
 customer that has waited longest. That would need its own per-customer
 backlog ledger, which is not this session's job.
 
-Deliberately out of scope, not forgotten: reordering components to
-replenish the plant, and the per-customer backlog ledger the paragraph
-above describes, are both still ahead.
+Deliberately out of scope, not forgotten: an MOQ or supplier-capacity cap
+on the quantity actually ordered, splitting an order across a dual-sourced
+part's suppliers (session 16's ``supplier_split_ratios``, not yet wired
+in -- this orders on a single lane), and the per-customer backlog ledger
+the paragraph above describes, are all still ahead.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+import numpy as np
 
 from daysofcover.engine.allocation import (
     CustomerOrder,
@@ -102,6 +111,7 @@ class DailyStepReport:
     """What happened at one plant, across every SKU it produces, on one day."""
 
     components_received: float
+    component_ordered: float
     sku_reports: tuple[SkuDayReport, ...]
 
 
@@ -115,6 +125,9 @@ def advance_one_day(
     sku_specs: list[SkuProductionSpec],
     current_day: int,
     allocation_rule: str = "backlog_proportion",
+    order_up_to: float | None = None,
+    review_period_days: int | None = None,
+    rng: np.random.Generator | None = None,
 ) -> DailyStepReport:
     """Advance one plant, across every SKU in ``sku_specs``, by one day.
 
@@ -122,8 +135,18 @@ def advance_one_day(
     ``"margin_priority"`` -- the build plan's own "with margin priority
     as an option" -- and selects which of session 16's two SKU-facing
     allocation functions splits ``component_part_id`` when more than one
-    spec's BOM references it. See the module docstring for order of
-    operations.
+    spec's BOM references it.
+
+    ``order_up_to`` and ``review_period_days`` together turn on the
+    plant's own periodic-review reordering of ``component_part_id``,
+    described in the module docstring; leaving either as ``None`` (the
+    default) leaves reordering off entirely, exactly as every earlier
+    session called this function. When reordering is on and today is a
+    review day, ``rng`` is required -- it is the lane's own lognormal
+    lead-time draw, the same as any other call to
+    :meth:`~daysofcover.engine.shipments.NetworkShipments.ship`.
+
+    See the module docstring for order of operations.
     """
     plant = state.node_index(plant_node_id)
     component_idx = state.part_index(component_part_id)
@@ -134,6 +157,9 @@ def advance_one_day(
             lane_id=inbound_lane_id, part_id=component_part_id, current_day=current_day
         )
         state.on_hand[plant, component_idx] += components_received
+        state.on_order[plant, component_idx] = max(
+            0.0, state.on_order[plant, component_idx] - components_received
+        )
 
     # 1. every SKU's due production completes and today's customer
     #    orders are allocated against what's on the shelf -- served by
@@ -262,4 +288,35 @@ def advance_one_day(
             )
         )
 
-    return DailyStepReport(components_received=components_received, sku_reports=tuple(sku_reports))
+    # 4. the plant's own periodic-review order-up-to decision for
+    #    component_part_id, made last so it sees today's true ending
+    #    inventory position -- on-hand plus whatever is already on
+    #    order, so a shipment already in the pipeline is never ordered
+    #    again. Off entirely when order_up_to or review_period_days is
+    #    None, or today is not a review day.
+    component_ordered = 0.0
+    if (
+        order_up_to is not None
+        and review_period_days is not None
+        and inbound_lane_id is not None
+        and current_day % review_period_days == 0
+    ):
+        position = float(state.on_hand[plant, component_idx] + state.on_order[plant, component_idx])
+        component_ordered = max(0.0, order_up_to - position)
+        if component_ordered > 0:
+            if rng is None:
+                raise ValueError("rng is required when a review day's order-up-to is positive")
+            shipments.ship(
+                lane_id=inbound_lane_id,
+                part_id=component_part_id,
+                quantity=component_ordered,
+                order_day=current_day,
+                rng=rng,
+            )
+            state.on_order[plant, component_idx] += component_ordered
+
+    return DailyStepReport(
+        components_received=components_received,
+        component_ordered=component_ordered,
+        sku_reports=tuple(sku_reports),
+    )

@@ -1,15 +1,19 @@
-"""Stage 1, sessions 15, 17 and 18: the daily-step loop, multiple SKUs
-sharing a scarce component, then multiple customers competing for one
-SKU's scarce finished goods.
+"""Stage 1, sessions 15, 17, 18 and 19: the daily-step loop, multiple
+SKUs sharing a scarce component, multiple customers competing for one
+SKU's scarce finished goods, then the plant's own periodic-review
+reordering of that scarce component.
 
 Not a validation case: session 15's single test is still the hand-traced
 baseline (every number reproduced exactly, now through the multi-SKU
 ``sku_specs`` API and a one-order-per-day ``orders`` list rather than
-the single ``daily_demand`` number it started with). Session 17's tests
-check the component-sharing allocation; this session's new tests check
-:func:`daysofcover.engine.allocation.allocate_finished_goods_to_orders`
-is actually wired into demand realisation -- a priority override between
-two same-day orders, and a same-priority FIFO tie broken by order date.
+the single ``daily_demand`` number it started with, and it never passes
+``order_up_to`` -- reordering stays off, exactly as session 15 wrote it).
+Session 17's tests check the component-sharing allocation; session 18's
+check the customer-competing-for-finished-goods allocation. This
+session's new tests check the order-up-to reordering itself: that it
+orders nothing until supply runs short, that it never double-orders a
+shipment already on order, and that a non-review day places no order at
+all.
 """
 
 from __future__ import annotations
@@ -374,3 +378,91 @@ def test_two_customers_same_priority_break_the_tie_by_order_date() -> None:
     # same priority, so the earlier order date (cust-2) wins the tie
     assert by_customer["cust-2"] == 10.0
     assert by_customer["cust-1"] == 5.0
+
+
+def test_reorder_places_nothing_on_a_non_review_day_then_orders_up_to_target() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+
+    reports = []
+    for day in range(4):
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id="lane-1",
+            sku_specs=[],  # isolate the reorder decision from production entirely
+            current_day=day,
+            order_up_to=20.0,
+            review_period_days=3,
+            rng=rng,
+        )
+        reports.append(report)
+
+    # day 0 is a review day, with nothing on hand or on order: order up to 20
+    assert reports[0].component_ordered == 20.0
+    # days 1 and 2 aren't review days at all -- no order, whatever the position
+    assert reports[1].component_ordered == 0.0
+    assert reports[2].component_ordered == 0.0
+    # day 2: the lane's 2-day lead time (deterministic, sigma=0) lands day 0's order
+    assert reports[2].components_received == 20.0
+    # day 3 is a review day again, but on-hand already sits at the target: no order
+    assert reports[3].component_ordered == 0.0
+    assert state.on_hand[plant, component_idx] == 20.0
+    assert state.on_order[plant, component_idx] == 0.0
+
+
+def test_reorder_never_double_orders_a_shipment_already_in_transit() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+
+    # a snapshot of (on_hand, on_order) as of the end of each day, since
+    # state is mutated in place and the loop below moves past each day
+    # before this test gets to assert on it.
+    snapshots = []
+    for day in range(3):
+        # reviewed every day, so day 1 reviews while day 0's order is
+        # still in transit
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id="lane-1",
+            sku_specs=[],
+            current_day=day,
+            order_up_to=20.0,
+            review_period_days=1,
+            rng=rng,
+        )
+        on_hand = float(state.on_hand[plant, component_idx])
+        on_order = float(state.on_order[plant, component_idx])
+        snapshots.append((report, on_hand, on_order))
+
+    report0, _on_hand0, on_order0 = snapshots[0]
+    report1, on_hand1, on_order1 = snapshots[1]
+    report2, on_hand2, on_order2 = snapshots[2]
+
+    # day 0: nothing on hand or on order yet -- order the full 20
+    assert report0.component_ordered == 20.0
+    assert on_order0 == 20.0
+    # day 1: still nothing on hand (the 2-day lead time hasn't landed it), but
+    # the 20 already on order covers the position -- no second order for it
+    assert report1.component_ordered == 0.0
+    assert on_hand1 == 0.0
+    assert on_order1 == 20.0
+    # day 2: day 0's shipment lands; on-hand is now at the target, so day 2's
+    # review orders nothing either
+    assert report2.components_received == 20.0
+    assert report2.component_ordered == 0.0
+    assert on_hand2 == 20.0
+    assert on_order2 == 0.0

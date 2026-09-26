@@ -20,6 +20,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - The allocation and split rules: backlog-proportional and margin-priority splits across SKUs, FIFO-with-priority-override across customer orders, and the dual-source fixed-split-until-contingent-switch rule.
 - Multiple SKUs sharing a scarce component in the daily-step loop, split by backlog proportion or, optionally, by margin priority.
 - Multiple customers competing for one SKU's scarce finished goods in the daily-step loop, served by priority override then FIFO by order date.
+- The plant's own periodic-review order-up-to reordering of a component, wired into the daily-step loop against the true on-hand-plus-on-order inventory position.
 
 ## [0.0.1] - 2026-09-26
 
