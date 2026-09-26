@@ -17,6 +17,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Per-lane, per-part in-transit shipments (FIFO unless allow_crossing, an independent lognormal lead time per shipment).
 - BOM-driven production at a plant: feasible daily output capped by capacity and the scarcest component, batched, with a fixed-lead-time production queue.
 - The first end-to-end daily-step loop, composing the state chassis, per-lane shipments and production for one plant and one SKU.
+- The allocation and split rules: backlog-proportional and margin-priority splits across SKUs, FIFO-with-priority-override across customer orders, and the dual-source fixed-split-until-contingent-switch rule.
 
 ## [0.0.1] - 2026-09-26
 
