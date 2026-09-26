@@ -31,11 +31,21 @@ later day's surplus stock cannot be preferentially repaid to the
 customer that has waited longest. That would need its own per-customer
 backlog ledger, which is not this session's job.
 
-Deliberately out of scope, not forgotten: an MOQ or supplier-capacity cap
-on the quantity actually ordered, splitting an order across a dual-sourced
-part's suppliers (session 16's ``supplier_split_ratios``, not yet wired
-in -- this orders on a single lane), and the per-customer backlog ledger
-the paragraph above describes, are all still ahead.
+Session 20 caps that order-up-to quantity against the inbound lane's
+own ``moq`` and ``capacity_per_week`` (:func:`daysofcover.engine.
+shipments.cap_order_quantity`), rather than always placing the full
+desired order -- a real supplier will not ship less than its minimum
+order quantity, and no lane ships more than its own weekly capacity
+regardless of how badly the plant wants it. When the capped quantity
+comes back as zero (an MOQ the desired order can't clear, or a week
+already fully used), no shipment is placed at all and ``on_order`` is
+left untouched -- the plant simply tries again on the next review day.
+
+Deliberately out of scope, not forgotten: splitting an order across a
+dual-sourced part's suppliers (session 16's ``supplier_split_ratios``,
+not yet wired in -- this still orders on a single lane), and the
+per-customer backlog ledger the paragraph above describes, are still
+ahead.
 """
 
 from __future__ import annotations
@@ -55,7 +65,7 @@ from daysofcover.engine.production import (
     consume_components,
     feasible_production_units,
 )
-from daysofcover.engine.shipments import NetworkShipments
+from daysofcover.engine.shipments import NetworkShipments, cap_order_quantity
 from daysofcover.engine.state import NetworkState
 from daysofcover.models.network import BOMLine
 
@@ -142,8 +152,10 @@ def advance_one_day(
     described in the module docstring; leaving either as ``None`` (the
     default) leaves reordering off entirely, exactly as every earlier
     session called this function. When reordering is on and today is a
-    review day, ``rng`` is required -- it is the lane's own lognormal
-    lead-time draw, the same as any other call to
+    review day, ``rng`` is required if the desired order (after the
+    inbound lane's MOQ and remaining weekly capacity cap it) comes out
+    positive -- it is the lane's own lognormal lead-time draw, the same
+    as any other call to
     :meth:`~daysofcover.engine.shipments.NetworkShipments.ship`.
 
     See the module docstring for order of operations.
@@ -293,7 +305,11 @@ def advance_one_day(
     #    inventory position -- on-hand plus whatever is already on
     #    order, so a shipment already in the pipeline is never ordered
     #    again. Off entirely when order_up_to or review_period_days is
-    #    None, or today is not a review day.
+    #    None, or today is not a review day. The desired quantity is
+    #    then capped against the inbound lane's own moq and remaining
+    #    weekly capacity -- a desired order that can't clear the moq
+    #    even after capacity capping it is deferred to zero rather than
+    #    placed as a partial, sub-moq shipment.
     component_ordered = 0.0
     if (
         order_up_to is not None
@@ -302,7 +318,13 @@ def advance_one_day(
         and current_day % review_period_days == 0
     ):
         position = float(state.on_hand[plant, component_idx] + state.on_order[plant, component_idx])
-        component_ordered = max(0.0, order_up_to - position)
+        desired_quantity = max(0.0, order_up_to - position)
+        lane_shipments = shipments.lanes[inbound_lane_id]
+        component_ordered = cap_order_quantity(
+            desired_quantity=desired_quantity,
+            moq=lane_shipments.lane.moq,
+            capacity_remaining=lane_shipments.capacity_remaining(current_day=current_day),
+        )
         if component_ordered > 0:
             if rng is None:
                 raise ValueError("rng is required when a review day's order-up-to is positive")

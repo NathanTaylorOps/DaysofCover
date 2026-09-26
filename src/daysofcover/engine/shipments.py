@@ -21,6 +21,22 @@ per (lane, part).
 BOM-driven production, the allocation and split rules, and the
 replication runner all still lie ahead; this module only carries goods
 in motion on a single lane from a placed order to an arrival day.
+
+Session 20 adds the one thing every shipment placed on a lane has
+always been subject to but nothing has ever enforced: the lane's own
+``capacity_per_week`` (a hard weekly cap on total quantity shipped, on
+every lane) and its optional ``moq`` (a minimum order quantity below
+which a supplier will not ship at all). Both are schema fields
+(:class:`daysofcover.models.network.Lane`) that predate this module
+but were never read anywhere in the engine until now. Capacity is
+tracked inside :class:`LaneShipments` itself, as a side effect of
+:meth:`LaneShipments.ship`, because every unit shipped on a lane
+consumes that lane's capacity regardless of which caller placed the
+order -- it does not belong to any one caller to track. :func:`cap_
+order_quantity` is the pure decision of how much of a *desired* order
+actually gets placed against those two limits, kept separate from
+``ship`` so a caller can decide not to order at all when the capped
+result is zero, rather than placing a zero-quantity shipment.
 """
 
 from __future__ import annotations
@@ -48,6 +64,35 @@ def _draw_lead_time_days(*, median_days: float, sigma: float, rng: np.random.Gen
     mu = math.log(median_days)
     lead_time = rng.lognormal(mean=mu, sigma=sigma)
     return max(1, round(lead_time))
+
+
+def cap_order_quantity(
+    *, desired_quantity: float, moq: float | None, capacity_remaining: float
+) -> float:
+    """How much of ``desired_quantity`` can actually be ordered right now.
+
+    ``moq`` (minimum order quantity, when the lane's supplier has one) is
+    rounded *up* to, never down from -- a desired order below the MOQ
+    still becomes a full MOQ-sized order, matching how a real supplier
+    would not ship less than their minimum. ``capacity_remaining`` (the
+    lane's own weekly cap, already netted for whatever it has shipped
+    this week -- see :meth:`LaneShipments.capacity_remaining`) is then
+    applied as a hard ceiling. If that ceiling cuts the order back below
+    the MOQ, the whole order is deferred to zero rather than placed
+    partially -- a supplier who requires an MOQ will not ship a
+    sub-MOQ quantity just because that is all this week's capacity
+    allows; the rest of the desired order waits for a future week's
+    capacity instead of arriving split into a MOQ-violating partial
+    shipment.
+    """
+    if desired_quantity <= 0:
+        return 0.0
+
+    required = desired_quantity if moq is None else max(desired_quantity, moq)
+    capped = min(required, capacity_remaining)
+    if moq is not None and capped < moq:
+        return 0.0
+    return capped
 
 
 def _fifo_arrival_day(candidate_arrival_day: int, previous_arrival_day: int | None) -> int:
@@ -81,6 +126,26 @@ class LaneShipments:
     _fifo: dict[str, deque[tuple[int, float]]] = field(default_factory=dict)
     _heap: dict[str, list[tuple[int, int, float]]] = field(default_factory=dict)
     _sequence: int = 0
+    _capacity_week_start: int | None = None
+    _capacity_used_this_week: float = 0.0
+
+    def capacity_remaining(self, *, current_day: int) -> float:
+        """This lane's unused ``capacity_per_week`` for the week containing ``current_day``.
+
+        Weeks are fixed 7-day blocks anchored at day 0 (``(current_day //
+        7) * 7``), not a rolling 7 days from each order -- the same
+        simple, deterministic week boundary the rest of the engine uses
+        for anything periodic (e.g. session 19's ``review_period_days``).
+        Crossing into a new week resets the used-this-week counter before
+        computing what remains, so this method is always safe to call
+        just to find out how much room is left, not only right before
+        shipping.
+        """
+        week_start = (current_day // 7) * 7
+        if week_start != self._capacity_week_start:
+            self._capacity_week_start = week_start
+            self._capacity_used_this_week = 0.0
+        return max(0.0, self.lane.capacity_per_week - self._capacity_used_this_week)
 
     def ship(
         self, *, part_id: str, quantity: float, order_day: int, rng: np.random.Generator
@@ -88,8 +153,15 @@ class LaneShipments:
         """Place one shipment, drawing its own lognormal lead time.
 
         Returns the day it is recorded as arriving -- FIFO-adjusted
-        already if this lane does not allow crossing.
+        already if this lane does not allow crossing. Every unit shipped
+        counts against this lane's ``capacity_per_week``, whichever part
+        it is or whichever caller placed it -- ``ship`` does not enforce
+        the cap itself (see :func:`cap_order_quantity` for that), it only
+        records the usage.
         """
+        self.capacity_remaining(current_day=order_day)  # apply week rollover bookkeeping
+        self._capacity_used_this_week += quantity
+
         lead_time_days = _draw_lead_time_days(
             median_days=self.lane.lead_time_days_median,
             sigma=self.lane.lead_time_days_sigma,
@@ -161,3 +233,7 @@ class NetworkShipments:
     def receive(self, *, lane_id: str, part_id: str, current_day: int) -> float:
         """Quantity of ``part_id`` arriving on ``lane_id`` by ``current_day``."""
         return self.lanes[lane_id].receive(part_id=part_id, current_day=current_day)
+
+    def capacity_remaining(self, *, lane_id: str, current_day: int) -> float:
+        """``lane_id``'s unused weekly capacity. See :meth:`LaneShipments.capacity_remaining`."""
+        return self.lanes[lane_id].capacity_remaining(current_day=current_day)

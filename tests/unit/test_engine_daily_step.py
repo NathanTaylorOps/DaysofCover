@@ -1,7 +1,8 @@
-"""Stage 1, sessions 15, 17, 18 and 19: the daily-step loop, multiple
+"""Stage 1, sessions 15, 17, 18, 19 and 20: the daily-step loop, multiple
 SKUs sharing a scarce component, multiple customers competing for one
-SKU's scarce finished goods, then the plant's own periodic-review
-reordering of that scarce component.
+SKU's scarce finished goods, the plant's own periodic-review reordering
+of that scarce component, and finally that reorder capped by the
+inbound lane's own MOQ and weekly capacity.
 
 Not a validation case: session 15's single test is still the hand-traced
 baseline (every number reproduced exactly, now through the multi-SKU
@@ -9,11 +10,13 @@ baseline (every number reproduced exactly, now through the multi-SKU
 the single ``daily_demand`` number it started with, and it never passes
 ``order_up_to`` -- reordering stays off, exactly as session 15 wrote it).
 Session 17's tests check the component-sharing allocation; session 18's
-check the customer-competing-for-finished-goods allocation. This
-session's new tests check the order-up-to reordering itself: that it
-orders nothing until supply runs short, that it never double-orders a
-shipment already on order, and that a non-review day places no order at
-all.
+check the customer-competing-for-finished-goods allocation; session 19's
+check the order-up-to reordering itself: that it orders nothing until
+supply runs short, that it never double-orders a shipment already on
+order, and that a non-review day places no order at all. Session 20's
+tests check that same reorder capped against the lane's remaining
+weekly capacity, deferred entirely below the lane's MOQ, and deferred
+to zero when capacity can't even clear the MOQ.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from daysofcover.models.network import (
 )
 
 
-def _network() -> Network:
+def _network(*, capacity_per_week: float = 1000.0, moq: float | None = None) -> Network:
     supplier = Node(id="supplier-1", name="Supplier One", type=NodeType.SUPPLIER, region="AU")
     plant = Node(id="plant-1", name="Plant One", type=NodeType.PLANT, region="AU")
     lane = Lane(
@@ -48,7 +51,8 @@ def _network() -> Network:
         mode=LaneMode.OCEAN,
         lead_time_days_median=2.0,
         lead_time_days_sigma=0.0,  # deterministic: always arrives on day 2
-        capacity_per_week=1000.0,
+        capacity_per_week=capacity_per_week,
+        moq=moq,
         unit_cost=1.0,
         currency="AUD",
         allow_crossing=False,
@@ -466,3 +470,88 @@ def test_reorder_never_double_orders_a_shipment_already_in_transit() -> None:
     assert report2.component_ordered == 0.0
     assert on_hand2 == 20.0
     assert on_order2 == 0.0
+
+
+def test_reorder_is_capped_by_the_lanes_remaining_weekly_capacity() -> None:
+    # a lane that can only move 15 units a week, well below the 20-unit
+    # order-up-to target
+    network = _network(capacity_per_week=15.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=0,
+        order_up_to=20.0,
+        review_period_days=1,
+        rng=rng,
+    )
+
+    # capped at the lane's 15-unit weekly capacity, not the full 20-unit target
+    assert report.component_ordered == 15.0
+    assert state.on_order[plant, component_idx] == 15.0
+
+
+def test_reorder_below_moq_is_deferred_entirely_rather_than_placed_partial() -> None:
+    # a supplier that won't ship less than 50 units, but the plant only
+    # needs 20 to reach its order-up-to target
+    network = _network(moq=50.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=0,
+        order_up_to=20.0,
+        review_period_days=1,
+        rng=rng,
+    )
+
+    # the 20-unit desired order would round up to the 50-unit MOQ, but this
+    # lane's capacity (1000/week, well above 50) has no trouble clearing it
+    assert report.component_ordered == 50.0
+    assert state.on_order[plant, component_idx] == 50.0
+
+
+def test_reorder_below_moq_and_capacity_together_is_deferred_to_zero() -> None:
+    # capacity (15/week) can't even clear the 50-unit MOQ this supplier
+    # requires, so no shipment is placed at all this week
+    network = _network(capacity_per_week=15.0, moq=50.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    rng = np.random.default_rng(seed=1)
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=0,
+        order_up_to=20.0,
+        review_period_days=1,
+        rng=rng,
+    )
+
+    assert report.component_ordered == 0.0
+    assert state.on_order[plant, component_idx] == 0.0
+    assert state.on_hand[plant, component_idx] == 0.0

@@ -21,6 +21,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Multiple SKUs sharing a scarce component in the daily-step loop, split by backlog proportion or, optionally, by margin priority.
 - Multiple customers competing for one SKU's scarce finished goods in the daily-step loop, served by priority override then FIFO by order date.
 - The plant's own periodic-review order-up-to reordering of a component, wired into the daily-step loop against the true on-hand-plus-on-order inventory position.
+- MOQ and per-lane weekly capacity caps on that reorder quantity, deferring an order to zero rather than placing a partial, sub-MOQ shipment.
 
 ## [0.0.1] - 2026-09-26
 

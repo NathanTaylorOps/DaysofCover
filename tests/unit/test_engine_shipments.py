@@ -1,13 +1,16 @@
-"""Stage 1, session 13: per-lane, per-part in-transit shipments.
+"""Stage 1, sessions 13 and 20: per-lane, per-part in-transit shipments,
+capped by MOQ and weekly capacity.
 
 Not a validation case: the point is the bookkeeping, not a reference
 number. FIFO enforcement and crossing are tested directly against
 :func:`daysofcover.engine.shipments._fifo_arrival_day` and
 :meth:`LaneShipments._record_shipment`, with no random draw involved, so
 those checks are exact rather than a matter of getting lucky with a
-seed; the last two tests exercise the public, RNG-driven :meth:`ship`
-end to end, but only for conservation of quantity, not for any specific
-arrival day.
+seed; the ship-conservation tests exercise the public, RNG-driven
+:meth:`ship` end to end, but only for conservation of quantity, not for
+any specific arrival day. Session 20's tests check
+:func:`cap_order_quantity` (a pure function, no lane or RNG involved)
+and :meth:`LaneShipments.capacity_remaining`'s weekly rollover.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from daysofcover.engine.shipments import (
     LaneShipments,
     NetworkShipments,
     _fifo_arrival_day,
+    cap_order_quantity,
 )
 from daysofcover.models.network import Lane, LaneMode, Network, Node, NodeType
 
@@ -140,3 +144,45 @@ def test_network_shipments_indexes_by_lane_id() -> None:
     assert shipments.receive(lane_id="lane-1", part_id="part-a", current_day=arrival_day) == 42.0
     # the other lane's records are untouched
     assert shipments.receive(lane_id="lane-2", part_id="part-a", current_day=arrival_day) == 0.0
+
+
+def test_cap_order_quantity_passes_through_a_desired_order_with_no_moq() -> None:
+    assert cap_order_quantity(desired_quantity=30.0, moq=None, capacity_remaining=1000.0) == 30.0
+
+
+def test_cap_order_quantity_rounds_a_small_order_up_to_the_moq() -> None:
+    assert cap_order_quantity(desired_quantity=20.0, moq=50.0, capacity_remaining=1000.0) == 50.0
+    # already above the moq: passes through unchanged
+    assert cap_order_quantity(desired_quantity=80.0, moq=50.0, capacity_remaining=1000.0) == 80.0
+
+
+def test_cap_order_quantity_returns_zero_for_a_non_positive_desired_order() -> None:
+    assert cap_order_quantity(desired_quantity=0.0, moq=None, capacity_remaining=1000.0) == 0.0
+    assert cap_order_quantity(desired_quantity=-5.0, moq=None, capacity_remaining=1000.0) == 0.0
+
+
+def test_cap_order_quantity_caps_at_capacity_when_capacity_is_the_binding_limit() -> None:
+    # no moq: capacity alone caps the order, no all-or-nothing deferral
+    assert cap_order_quantity(desired_quantity=100.0, moq=None, capacity_remaining=40.0) == 40.0
+
+
+def test_cap_order_quantity_defers_to_zero_when_capacity_cannot_clear_the_moq() -> None:
+    # 20 rounds up to the 50-unit moq, but only 30 units of capacity remain
+    # this week -- a partial, sub-moq shipment is never placed
+    assert cap_order_quantity(desired_quantity=20.0, moq=50.0, capacity_remaining=30.0) == 0.0
+
+
+def test_capacity_remaining_tracks_usage_within_a_week_and_resets_across_weeks() -> None:
+    lane = LaneShipments(lane=_fifo_lane())  # capacity_per_week=1000.0
+
+    assert lane.capacity_remaining(current_day=0) == 1000.0
+    rng = np.random.default_rng(seed=1)
+    lane.ship(part_id="part-a", quantity=400.0, order_day=0, rng=rng)
+    assert lane.capacity_remaining(current_day=3) == 600.0
+
+    lane.ship(part_id="part-a", quantity=600.0, order_day=3, rng=rng)
+    assert lane.capacity_remaining(current_day=6) == 0.0
+
+    # day 7 starts a new week (day 6 // 7 == 0, day 7 // 7 == 1): the used-
+    # this-week counter resets and the full weekly capacity is back
+    assert lane.capacity_remaining(current_day=7) == 1000.0
