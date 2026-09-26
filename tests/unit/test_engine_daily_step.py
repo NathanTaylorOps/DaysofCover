@@ -1,19 +1,22 @@
-"""Stage 1, sessions 15 and 17: the daily-step loop, then multiple SKUs
-sharing a scarce component.
+"""Stage 1, sessions 15, 17 and 18: the daily-step loop, multiple SKUs
+sharing a scarce component, then multiple customers competing for one
+SKU's scarce finished goods.
 
 Not a validation case: session 15's single test is still the hand-traced
 baseline (every number reproduced exactly, now through the multi-SKU
-``sku_specs`` API rather than the single-SKU arguments it started with).
-This session's new tests check the allocation rule itself is actually
-wired in -- two SKUs competing for one component split by backlog share
-or by margin, and a third SKU whose BOM never touches the shared
-component staying untouched by either.
+``sku_specs`` API and a one-order-per-day ``orders`` list rather than
+the single ``daily_demand`` number it started with). Session 17's tests
+check the component-sharing allocation; this session's new tests check
+:func:`daysofcover.engine.allocation.allocate_finished_goods_to_orders`
+is actually wired into demand realisation -- a priority override between
+two same-day orders, and a same-priority FIFO tie broken by order date.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from daysofcover.engine.allocation import CustomerOrder
 from daysofcover.engine.daily_step import SkuProductionSpec, advance_one_day
 from daysofcover.engine.production import ProductionQueue
 from daysofcover.engine.shipments import NetworkShipments
@@ -81,18 +84,20 @@ def test_one_plant_one_sku_traced_over_seven_days() -> None:
     shipments.ship(lane_id="lane-1", part_id="part-a", quantity=50.0, order_day=0, rng=rng)
 
     bom = [BOMLine(part_id="part-a", quantity=1.0)]
-    spec = SkuProductionSpec(
-        finished_sku_id="sku-a",
-        bom=bom,
-        capacity_per_week=7_000.0,
-        batch_size=1.0,
-        production_lead_time_days=3.0,
-        daily_demand=10.0,
-        production_queue=production_queue,
-    )
 
     reports = []
     for day in range(7):
+        # a fresh order each day, exactly matching session 15's fixed
+        # daily_demand=10.0 -- one customer, one order, due today.
+        spec = SkuProductionSpec(
+            finished_sku_id="sku-a",
+            bom=bom,
+            capacity_per_week=7_000.0,
+            batch_size=1.0,
+            production_lead_time_days=3.0,
+            orders=[CustomerOrder(customer_id="cust-1", order_day=day, quantity=10.0, priority=0)],
+            production_queue=production_queue,
+        )
         report = advance_one_day(
             state=state,
             shipments=shipments,
@@ -191,7 +196,7 @@ def _spec(sku_id: str, *, bom: list[BOMLine], margin_fraction: float = 0.0) -> S
         capacity_per_week=7_000.0,  # deliberately far above on-hand: never the binding cap
         batch_size=1.0,
         production_lead_time_days=3.0,
-        daily_demand=0.0,  # zero demand keeps backlog exactly at whatever the test sets
+        orders=[],  # no orders keeps backlog exactly at whatever the test sets
         production_queue=ProductionQueue(),
         margin_fraction=margin_fraction,
     )
@@ -280,3 +285,92 @@ def test_a_sku_whose_bom_does_not_touch_the_shared_component_is_unaffected() -> 
     # sku-c never competed for part-a at all -- its own part-b on-hand is untouched
     assert by_sku["sku-c"].production_started == 40.0
     assert state.on_hand[plant, state.part_index("part-b")] == 0.0
+
+
+def test_two_customers_scarce_finished_goods_priority_override() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    sku_idx = state.sku_index("sku-a")
+    state.finished_on_hand[plant, sku_idx] = 15.0
+
+    orders = [
+        # cust-1's order is placed earlier but at the lower-priority tier
+        CustomerOrder(customer_id="cust-1", order_day=3, quantity=10.0, priority=1),
+        # cust-2 orders later but at priority 0, the override the build plan names
+        CustomerOrder(customer_id="cust-2", order_day=5, quantity=10.0, priority=0),
+    ]
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=0.0,  # no new production this day -- isolate the allocation
+        batch_size=1.0,
+        production_lead_time_days=3.0,
+        orders=orders,
+        production_queue=ProductionQueue(),
+    )
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[spec],
+        current_day=5,
+    )
+
+    sku_report = report.sku_reports[0]
+    by_customer = {of.order.customer_id: of.fulfilled for of in sku_report.order_fulfillment}
+    # cust-2's priority-0 order is served in full first, despite being placed later
+    assert by_customer["cust-2"] == 10.0
+    # only 5 units are left on the shelf for cust-1's lower-priority order
+    assert by_customer["cust-1"] == 5.0
+    assert sku_report.demand_realized == 20.0
+    assert sku_report.demand_met == 15.0
+    # the unmet 5 units land in the SKU's one aggregate backlog number
+    assert state.finished_backlog[plant, sku_idx] == 5.0
+    assert state.finished_on_hand[plant, sku_idx] == 0.0
+
+
+def test_two_customers_same_priority_break_the_tie_by_order_date() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    sku_idx = state.sku_index("sku-a")
+    state.finished_on_hand[plant, sku_idx] = 15.0
+
+    orders = [
+        # placed later, but listed first here -- order in the list must not matter
+        CustomerOrder(customer_id="cust-1", order_day=5, quantity=10.0, priority=0),
+        # the earlier order, at the same priority, is served first
+        CustomerOrder(customer_id="cust-2", order_day=2, quantity=10.0, priority=0),
+    ]
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=0.0,
+        batch_size=1.0,
+        production_lead_time_days=3.0,
+        orders=orders,
+        production_queue=ProductionQueue(),
+    )
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[spec],
+        current_day=5,
+    )
+
+    by_customer = {
+        of.order.customer_id: of.fulfilled for of in report.sku_reports[0].order_fulfillment
+    }
+    # same priority, so the earlier order date (cust-2) wins the tie
+    assert by_customer["cust-2"] == 10.0
+    assert by_customer["cust-1"] == 5.0

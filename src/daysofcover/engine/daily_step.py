@@ -1,45 +1,34 @@
 """One day of the world: composing state, shipments, production and allocation.
 
-Sessions 12 to 15 built the pieces and composed them for one plant
-producing one SKU from one component supplied over one lane. This
-session takes the first item off that composition's own deferred list --
-"multiple SKUs sharing a scarce component" -- and wires session 16's
-:func:`daysofcover.engine.allocation.allocate_by_backlog_proportion` (or,
-optionally, :func:`~daysofcover.engine.allocation.allocate_by_margin_priority`)
-into the daily step itself.
+Session 17 took the first item off this composition's own deferred list,
+"multiple SKUs sharing a scarce component". This session takes the
+second: "multiple customers competing for one SKU's scarce finished
+goods", wiring in session 16's
+:func:`daysofcover.engine.allocation.allocate_finished_goods_to_orders`.
+Today's demand for a SKU is now a list of that SKU's :class:`~daysofcover
+.engine.allocation.CustomerOrder`, not a single number -- the allocation
+serves them by ascending priority first, then FIFO by order date within
+the same priority, exactly as session 16 specified it, before today's
+new production is decided.
 
-Order of operations is unchanged from session 15's single-SKU version,
-now applied per SKU: shipments arrive before anything else, so today's
-arrivals count as available components; each SKU's due production
-completes into finished goods before demand is realised, so a batch
-finishing today can be sold the same day; demand then consumes finished
-goods on hand and backlogs whatever it cannot. Only once every SKU's
-demand has been served does the day decide how much of today's *new*
-production each SKU gets to start -- and that decision, when more than
-one SKU shares ``component_part_id``, now goes through the allocation
-rule rather than each SKU simply grabbing what it can find on the shelf
-in an arbitrary order.
+Order of operations is otherwise unchanged: shipments arrive before
+anything else, so today's arrivals count as available components; each
+SKU's due production completes into finished goods before demand is
+realised, so a batch finishing today can be sold the same day; only then
+does the day decide how much of today's *new* production each SKU gets
+to start, going through session 17's component allocation when more
+than one SKU shares ``component_part_id``.
 
-The allocation only ever governs ``component_part_id``, the one shared
-part this session generalises. Every other line in a SKU's BOM is still
-read directly off the plant's real on-hand, unconstrained by any other
-SKU's claim on it -- exactly session 15's behaviour, just not yet
-extended to a second shared part. A SKU whose BOM does not reference
-``component_part_id`` at all sits outside the allocation entirely and
-produces however its own components allow.
+Backlog is still tracked only in aggregate per (node, sku), not per
+customer -- an order that goes unfulfilled today adds to the SKU's one
+backlog number, and there is no record of *whose* order that was, so a
+later day's surplus stock cannot be preferentially repaid to the
+customer that has waited longest. That would need its own per-customer
+backlog ledger, which is not this session's job.
 
-Each SKU's "request" for its share of the scarce component is what it
-would consume today if supply were unlimited -- capped only by its own
-capacity and batch size, via :func:`daysofcover.engine.production.
-feasible_production_units` called with an unlimited on-hand for every
-part, so the same batch-rounding and capacity-capping logic is not
-duplicated here.
-
-Deliberately out of scope, not forgotten: multiple customers competing
-for one SKU's scarce finished goods (session 16's ``allocate_finished_
-goods_to_orders``, not yet wired in -- today's demand is still a single
-number per SKU, not a list of customer orders), and reordering
-components to replenish the plant, are both still ahead.
+Deliberately out of scope, not forgotten: reordering components to
+replenish the plant, and the per-customer backlog ledger the paragraph
+above describes, are both still ahead.
 """
 
 from __future__ import annotations
@@ -47,8 +36,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from daysofcover.engine.allocation import (
+    CustomerOrder,
     allocate_by_backlog_proportion,
     allocate_by_margin_priority,
+    allocate_finished_goods_to_orders,
 )
 from daysofcover.engine.production import (
     ProductionQueue,
@@ -67,12 +58,13 @@ class SkuProductionSpec:
     """One SKU's production inputs for a shared-plant daily step.
 
     ``production_queue`` is mutated in place across days -- it is the
-    same object the caller keeps between calls, exactly as session 15's
-    single ``production_queue`` argument was. ``margin_fraction`` is
+    same object the caller keeps between calls. ``margin_fraction`` is
     only read when ``allocation_rule="margin_priority"``; it is simplest
     to carry directly on the spec (matching
     :attr:`daysofcover.models.network.SKU.margin_fraction`) rather than
-    as a separate parallel mapping.
+    as a separate parallel mapping. ``orders`` is this SKU's customer
+    orders due *today* -- a fresh list each call, the same way a real
+    day's orders would differ from the last.
     """
 
     finished_sku_id: str
@@ -80,9 +72,17 @@ class SkuProductionSpec:
     capacity_per_week: float
     batch_size: float
     production_lead_time_days: float
-    daily_demand: float
+    orders: list[CustomerOrder]
     production_queue: ProductionQueue
     margin_fraction: float = 0.0
+
+
+@dataclass(frozen=True)
+class OrderFulfillment:
+    """One customer order's outcome on one day, alongside the order itself."""
+
+    order: CustomerOrder
+    fulfilled: float
 
 
 @dataclass(frozen=True)
@@ -94,6 +94,7 @@ class SkuDayReport:
     demand_realized: float
     demand_met: float
     production_started: float
+    order_fulfillment: tuple[OrderFulfillment, ...]
 
 
 @dataclass(frozen=True)
@@ -134,24 +135,35 @@ def advance_one_day(
         )
         state.on_hand[plant, component_idx] += components_received
 
-    # 1. every SKU's due production completes and today's demand is
-    #    realised and (partly) backlogged, before any new production
-    #    is decided.
+    # 1. every SKU's due production completes and today's customer
+    #    orders are allocated against what's on the shelf -- served by
+    #    ascending priority, then FIFO by order date -- before any new
+    #    production is decided. Backlog stays an aggregate per (node,
+    #    sku): see the module docstring for what that still can't do.
     finished_goods_completed_by_sku: dict[str, float] = {}
     demand_met_by_sku: dict[str, float] = {}
+    order_fulfillment_by_sku: dict[str, tuple[OrderFulfillment, ...]] = {}
     for spec in sku_specs:
         sku_idx = state.sku_index(spec.finished_sku_id)
         finished_goods_completed = spec.production_queue.complete(current_day=current_day)
         state.finished_on_hand[plant, sku_idx] += finished_goods_completed
 
         available_finished = float(state.finished_on_hand[plant, sku_idx])
-        demand_met = min(available_finished, spec.daily_demand)
-        unmet = spec.daily_demand - demand_met
+        fulfilled = allocate_finished_goods_to_orders(
+            available_quantity=available_finished, orders=spec.orders
+        )
+        demand_realized = sum(order.quantity for order in spec.orders)
+        demand_met = sum(fulfilled)
+        unmet = demand_realized - demand_met
         state.finished_on_hand[plant, sku_idx] -= demand_met
         state.finished_backlog[plant, sku_idx] += unmet
 
         finished_goods_completed_by_sku[spec.finished_sku_id] = finished_goods_completed
         demand_met_by_sku[spec.finished_sku_id] = demand_met
+        order_fulfillment_by_sku[spec.finished_sku_id] = tuple(
+            OrderFulfillment(order=order, fulfilled=quantity)
+            for order, quantity in zip(spec.orders, fulfilled, strict=True)
+        )
 
     # 2. how much of the shared component each SKU would consume today
     #    if supply were unlimited, capped only by its own capacity and
@@ -243,9 +255,10 @@ def advance_one_day(
             SkuDayReport(
                 finished_sku_id=spec.finished_sku_id,
                 finished_goods_completed=finished_goods_completed_by_sku[spec.finished_sku_id],
-                demand_realized=spec.daily_demand,
+                demand_realized=sum(order.quantity for order in spec.orders),
                 demand_met=demand_met_by_sku[spec.finished_sku_id],
                 production_started=feasible,
+                order_fulfillment=order_fulfillment_by_sku[spec.finished_sku_id],
             )
         )
 

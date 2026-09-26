@@ -19,6 +19,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - The first end-to-end daily-step loop, composing the state chassis, per-lane shipments and production for one plant and one SKU.
 - The allocation and split rules: backlog-proportional and margin-priority splits across SKUs, FIFO-with-priority-override across customer orders, and the dual-source fixed-split-until-contingent-switch rule.
 - Multiple SKUs sharing a scarce component in the daily-step loop, split by backlog proportion or, optionally, by margin priority.
+- Multiple customers competing for one SKU's scarce finished goods in the daily-step loop, served by priority override then FIFO by order date.
 
 ## [0.0.1] - 2026-09-26
 
