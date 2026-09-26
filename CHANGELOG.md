@@ -14,6 +14,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - A linear production-capacity ramp after a restart, validated against validation case 12 (ramp bounds).
 - A backlog-driven shipment-recovery lag behind a step production recovery, validated against validation case 13 (shipment lag).
 - The multi-node engine's state chassis: NumPy arrays indexed by (node, part) for on-hand, on-order and backlog, sized from a real network.
+- Per-lane, per-part in-transit shipments (FIFO unless allow_crossing, an independent lognormal lead time per shipment).
 
 ## [0.0.1] - 2026-09-26
 
