@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
@@ -8,6 +8,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 - Stage 1 spike: a single-node daily-step engine (continuous-review base-stock, periodic (R, S), periodic (s, S)), validated against validation cases 1 to 3.
 - ADR-008: own daily-step engine over SimPy, confirmed by the spike's numbers.
+- Per-shipment in-transit records (crossing allowed, independent lognormal lead times), validated against validation cases 5 and 6.
 
 ## [0.0.1] - 2026-09-26
 
