@@ -15,6 +15,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - A backlog-driven shipment-recovery lag behind a step production recovery, validated against validation case 13 (shipment lag).
 - The multi-node engine's state chassis: NumPy arrays indexed by (node, part) for on-hand, on-order and backlog, sized from a real network.
 - Per-lane, per-part in-transit shipments (FIFO unless allow_crossing, an independent lognormal lead time per shipment).
+- BOM-driven production at a plant: feasible daily output capped by capacity and the scarcest component, batched, with a fixed-lead-time production queue.
 
 ## [0.0.1] - 2026-09-26
 
