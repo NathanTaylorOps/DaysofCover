@@ -10,6 +10,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - ADR-008: own daily-step engine over SimPy, confirmed by the spike's numbers.
 - Per-shipment in-transit records (crossing allowed, independent lognormal lead times), validated against validation cases 5 and 6.
 - Order-pausing disruptions on a base-stock node (a two-state Markov process), validated against validation case 4.
+- A serial multi-node chain (order-up-to with a moving-average forecast), validated against validation case 11 (bullwhip).
 
 ## [0.0.1] - 2026-09-26
 
