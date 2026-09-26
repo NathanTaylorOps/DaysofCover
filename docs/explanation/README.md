@@ -1,4 +1,4 @@
-# Explanation
+﻿# Explanation
 
 Understanding-oriented material: why the tool works the way it does. This
 is where design decisions, methodology and architectural reasoning live,
@@ -32,7 +32,7 @@ Contents:
 | [005](adr/005-recovery-as-three-point-input.md) | Recovery as a three-point input with ramp recovery, never an output |
 | [006](adr/006-and-or-screen-over-centrality.md) | AND/OR flow-weighted screen over centrality |
 | [007](adr/007-svelte-flow-over-cytoscape.md) | Svelte Flow over Cytoscape.js |
+| [008](adr/008-own-engine-over-simpy.md) | Own daily-step engine over SimPy, with the spike's numbers |
 
-Later ADRs (own daily-step engine after the Stage 1 spike; enumerated worst
-case after Stage 4; v1.0 scope boundaries) are added as those decisions are
-actually made, not written in advance.
+Later ADRs (enumerated worst case after Stage 4; v1.0 scope boundaries) are
+added as those decisions are actually made, not written in advance.

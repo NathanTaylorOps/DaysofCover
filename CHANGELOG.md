@@ -4,6 +4,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Stage 1 spike: a single-node daily-step engine (continuous-review base-stock, periodic (R, S), periodic (s, S)), validated against validation cases 1 to 3.
+- ADR-008: own daily-step engine over SimPy, confirmed by the spike's numbers.
+
 ## [0.0.1] - 2026-09-26
 
 ### Added
