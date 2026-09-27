@@ -204,6 +204,20 @@ class LaneShipments:
 
         return arrived
 
+    def outstanding(self, *, part_id: str) -> float:
+        """Total quantity of ``part_id`` in transit on this lane right now.
+
+        Non-destructive, unlike :meth:`receive` -- this is a read of both
+        queues' total quantity, whatever their arrival days, with nothing
+        popped. Session 22's review found this method missing was exactly
+        why nothing could read real in-transit inventory without reaching
+        into ``_fifo``/``_heap`` directly (as the tests once had to); this
+        is the accessor that removes that need.
+        """
+        fifo_total = sum(quantity for _, quantity in self._fifo.get(part_id, ()))
+        heap_total = sum(quantity for _, _, quantity in self._heap.get(part_id, ()))
+        return fifo_total + heap_total
+
 
 @dataclass
 class NetworkShipments:
@@ -237,3 +251,21 @@ class NetworkShipments:
     def capacity_remaining(self, *, lane_id: str, current_day: int) -> float:
         """``lane_id``'s unused weekly capacity. See :meth:`LaneShipments.capacity_remaining`."""
         return self.lanes[lane_id].capacity_remaining(current_day=current_day)
+
+    def outstanding_at_node(self, *, node_id: str, part_id: str) -> float:
+        """Real in-transit ``part_id`` inbound to ``node_id``, across every lane.
+
+        Sums :meth:`LaneShipments.outstanding` over every lane whose
+        ``destination_id`` is ``node_id`` -- each :class:`LaneShipments`
+        already carries its own :class:`daysofcover.models.network.Lane`,
+        so no separate node/lane map is needed here. This is what a
+        reorder's inventory position (on-hand plus on-order) reads
+        instead of a separately maintained counter -- see
+        :mod:`daysofcover.engine.state`'s module docstring for why that
+        counter is gone.
+        """
+        return sum(
+            lane_shipments.outstanding(part_id=part_id)
+            for lane_shipments in self.lanes.values()
+            if lane_shipments.lane.destination_id == node_id
+        )

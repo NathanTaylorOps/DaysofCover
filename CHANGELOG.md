@@ -13,7 +13,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - A serial multi-node chain (order-up-to with a moving-average forecast), validated against validation case 11 (bullwhip).
 - A linear production-capacity ramp after a restart, validated against validation case 12 (ramp bounds).
 - A backlog-driven shipment-recovery lag behind a step production recovery, validated against validation case 13 (shipment lag).
-- The multi-node engine's state chassis: NumPy arrays indexed by (node, part) for on-hand, on-order and backlog, sized from a real network.
+- The multi-node engine's state chassis: NumPy arrays indexed by (node, part) for on-hand and backlog, sized from a real network.
 - Per-lane, per-part in-transit shipments (FIFO unless allow_crossing, an independent lognormal lead time per shipment).
 - BOM-driven production at a plant: feasible daily output capped by capacity and the scarcest component, batched, with a fixed-lead-time production queue.
 - The first end-to-end daily-step loop, composing the state chassis, per-lane shipments and production for one plant and one SKU.
@@ -29,6 +29,12 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Validation harnesses cross-checking the engine against two independent, external inventory/supply-chain libraries: `stockpyl` (case 3's (s, S) policy, against `stockpyl.ss.s_s_cost_discrete`'s own exact evaluation) and `SupplyNetPy` (a zero-lead-time (s, S) policy's service level, against classical continuous-review theory, across a genuinely different -- discrete-event, continuous-time -- simulator architecture).
 - A parametric synthetic network generator (`daysofcover.data.synthetic`) and a profiling script (`scripts/profile_engine.py`) measuring the daily-step engine's per-day wall-clock time on a network sized to the plan's ~40-node/25-part target, against its 200 ms target.
 - A generated `VALIDATION.md` (`scripts/generate_validation_report.py`), reproducing validation cases 1 to 6, 11, 12 and 13 with their actual numbers alongside each one's published reference and tolerance.
+
+### Changed
+
+- Replaced the state chassis's separately-maintained `on_order` array -- a shadow counter synced by hand at five call sites in the daily-step loop -- with `NetworkShipments.outstanding_at_node`, deriving on-order inventory on demand from the real per-shipment records instead of a second, driftable source of truth. Both reorder-position calculations in the daily-step loop now read the derived value.
+- Wired a scenario's named `Disruption`s into the real daily-step loop via a new `DisruptionState` module, resolved once per run against the network's own node and lane ids: a node-level disruption now cascades to every lane touching that node (a closed port stops every lane through it, per the build plan), a fully-down lane holds cargo already in transit instead of releasing it, a fully-down plant skips its own reorder decision and production entirely, and a partial severity fraction scales new order capacity and plant production capacity rather than closing anything outright. Previously, `Disruption` and `HazardGroup` were validated only against the standalone single-node reference in validation case 4 and had no effect on the multi-node engine at all.
+- Clarified `VALIDATION.md`'s intro paragraph (and the generator that writes it) to state plainly that every case there checks a standalone, single-purpose reference implementation, not the real multi-node engine -- which has its own unit and property test coverage but no external-reference validation yet; that is what the upcoming LP layer (cases 7 to 9) is for.
 
 ## [0.0.1] - 2026-09-26
 

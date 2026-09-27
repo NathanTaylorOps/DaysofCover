@@ -15,6 +15,16 @@ a string between them.
 Deliberately still deferred: BOM-driven production, the allocation and
 split rules, the replication runner with entity-indexed common random
 numbers, and warm-up.
+
+Session 22's review found ``on_order``, as this docstring first
+described it, was never real state: an independently maintained shadow
+counter that only stayed correct if every future caller mirrored
+:mod:`daysofcover.engine.daily_step`'s own increment/decrement pattern
+exactly. It is deleted, not renamed -- on-order inventory is now always
+read straight off the real per-shipment records via
+:meth:`daysofcover.engine.shipments.NetworkShipments.outstanding_at_node`,
+so there is exactly one place that can be wrong instead of two that can
+drift apart.
 """
 
 from __future__ import annotations
@@ -30,13 +40,19 @@ from daysofcover.models.network import Network
 class NetworkState:
     """Zero-filled state arrays, sized from a real network.
 
-    ``on_hand``, ``on_order`` and ``backlog`` are (node, part) arrays for
-    component inventory -- exactly session 12's three arrays. ``finished_
-    on_hand`` and ``finished_backlog`` are the (node, sku) equivalents for
-    finished-goods inventory: what a plant has actually produced and can
-    sell, and how much demand for it is still owed. A node that never
-    holds a given part or sku just stays zero there, which costs nothing
-    at this network's size.
+    ``on_hand`` and ``backlog`` are (node, part) arrays for component
+    inventory. ``finished_on_hand`` and ``finished_backlog`` are the
+    (node, sku) equivalents for finished-goods inventory: what a plant
+    has actually produced and can sell, and how much demand for it is
+    still owed. A node that never holds a given part or sku just stays
+    zero there, which costs nothing at this network's size.
+
+    There is no ``on_order`` array here -- see the module docstring.
+    On-order inventory (on-hand plus what's already in the pipeline,
+    the position a reorder decision needs) is computed on demand from
+    :class:`daysofcover.engine.shipments.NetworkShipments`'s own
+    records, not cached here, because it is only ever needed on a
+    review day, not every day (see :mod:`daysofcover.engine.daily_step`).
     """
 
     node_ids: tuple[str, ...]
@@ -46,7 +62,6 @@ class NetworkState:
     part_index_map: dict[str, int]
     sku_index_map: dict[str, int]
     on_hand: np.ndarray
-    on_order: np.ndarray
     backlog: np.ndarray
     finished_on_hand: np.ndarray
     finished_backlog: np.ndarray
@@ -96,7 +111,6 @@ class NetworkState:
             part_index_map={part_id: i for i, part_id in enumerate(part_ids)},
             sku_index_map={sku_id: i for i, sku_id in enumerate(sku_ids)},
             on_hand=np.zeros(part_shape),
-            on_order=np.zeros(part_shape),
             backlog=np.zeros(part_shape),
             finished_on_hand=np.zeros(sku_shape),
             finished_backlog=np.zeros(sku_shape),

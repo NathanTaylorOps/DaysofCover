@@ -13,7 +13,7 @@ state chassis is always sized exactly from the network it was built
 from.
 
 Uses the strategies in ``tests/strategies.py`` (not duplicated here) for
-anything that needs a *valid* network, part-suppliers list, or id set --
+anything that needs a *valid* network, part-supplier list, or id set --
 see that module's docstring for why a hand-rolled ``st.builds`` would not
 do.
 """
@@ -185,7 +185,6 @@ def test_state_chassis_is_sized_from_the_network_it_was_built_from(network: Netw
     n_skus = len(network.skus)
 
     assert state.on_hand.shape == (n_nodes, n_parts)
-    assert state.on_order.shape == (n_nodes, n_parts)
     assert state.backlog.shape == (n_nodes, n_parts)
     assert state.finished_on_hand.shape == (n_nodes, n_skus)
     assert state.finished_backlog.shape == (n_nodes, n_skus)

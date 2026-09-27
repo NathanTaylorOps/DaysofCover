@@ -276,6 +276,18 @@ def generate() -> str:
         "citation. This is the build plan's Stage 1 Engine milestone "
         'acceptance criterion: "cases 1 to 6, 11, 12 and 13 pass with '
         'numbers in the generated VALIDATION.md."\n\n'
+        "Every case below checks a standalone, single-purpose reference "
+        "implementation written for that comparison alone (`single_node.py`, "
+        "`disruption.py`, `pipeline.py`, `bullwhip.py`, `ramp.py`, "
+        "`shipment_lag.py`) -- none of them drive the real multi-node engine "
+        "(`daily_step.py`, `NetworkState`, `NetworkShipments`) that the rest "
+        "of this project runs on. That engine has its own unit and property "
+        "test coverage (`tests/unit/test_engine_daily_step.py` and "
+        "`tests/property/test_engine_invariants.py`, among others), but "
+        "nothing there is checked against an external analytical reference "
+        "the way the cases below are -- the LP layer (build plan cases 7 to "
+        "9) is what will hold the multi-node engine itself to a published "
+        "bound, later in the plan.\n\n"
         f"{body}"
     )
 

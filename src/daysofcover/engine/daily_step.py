@@ -17,8 +17,11 @@ into a bare NumPy pipeline.
 The order-up-to decision is made after everything else that day --
 shipments have already arrived, every SKU's production for the day has
 already started -- so it sees the day's true ending inventory position:
-on-hand plus what's already on order (:attr:`daysofcover.engine.state.
-NetworkState.on_order`, sized in session 12 but unused until now), never
+on-hand plus what's already on order, read from
+:meth:`daysofcover.engine.shipments.NetworkShipments.outstanding_at_node`
+(session 22 replaced this session's original shadow counter with a
+read of the real per-shipment records -- see
+:mod:`daysofcover.engine.state`'s module docstring), never
 double-ordering for a shipment already in the pipeline. On a non-review
 day, or when ``order_up_to``/``review_period_days`` are left ``None``
 (the default), nothing changes and every earlier session's calls still
@@ -38,8 +41,9 @@ desired order -- a real supplier will not ship less than its minimum
 order quantity, and no lane ships more than its own weekly capacity
 regardless of how badly the plant wants it. When the capped quantity
 comes back as zero (an MOQ the desired order can't clear, or a week
-already fully used), no shipment is placed at all and ``on_order`` is
-left untouched -- the plant simply tries again on the next review day.
+already fully used), no shipment is placed at all and the on-order
+position is left untouched -- the plant simply tries again on the next
+review day.
 
 Session 21 wires in the last of session 16's three allocation
 functions still sitting unused: :func:`daysofcover.engine.allocation.
@@ -58,14 +62,42 @@ tight this week never holds back another's -- and ``inbound_lane_id``
 plays no part in either receiving or ordering; every lane in ``lane_by
 _supplier`` is read instead.
 
-Deliberately out of scope, not forgotten: the per-customer backlog
-ledger the paragraph above describes is still ahead, and so is
-*detecting* a primary supplier as down in the first place -- that is a
-disruption-modelling question (hazard groups, downtime semantics),
-still ahead per the build plan's own milestone 3. This session only
-wires in what happens once a caller already knows ``primary_down_since
-_day``, exactly as :func:`supplier_split_ratios` itself only answers
-that question given whatever the caller has already decided.
+Deliberately out of scope when this session (21) was written, but no
+longer: *detecting* a primary supplier as down in the first place was a
+disruption-modelling question with nothing to plug into yet. Session
+22 adds that plug. ``disruption_state``
+(:class:`daysofcover.engine.disruption_state.DisruptionState`, built
+from a scenario's own ``Disruption`` list) is optional and defaults to
+``None``, which leaves every earlier session's call exactly as it was:
+
+- A lane whose current severity is 1.0 (fully down -- see
+  ``disruption_state``'s own module docstring for what "fully down"
+  means versus a partial slowdown) is skipped entirely on the
+  receiving side: :meth:`daysofcover.engine.shipments.NetworkShipments.
+  receive` is not called for it this day, so whatever has already
+  arrived at that lane's destination stays queued rather than landing
+  on the shelf -- a closed port holding cargo, not losing it.
+- Every lane's remaining capacity, wherever it is read for a reorder
+  decision, is scaled by ``(1 - severity)`` for that lane today, on top
+  of its own ``capacity_per_week``/``moq`` limits -- a fractional
+  severity throttles new orders without needing its own separate cap.
+- ``plant_node_id`` itself being fully down pauses the whole reorder
+  decision for the day (no order placed, on-order position untouched),
+  the real-engine analog of case 4's order-pausing mechanic.
+- Each SKU's production capacity for the day is scaled by ``(1 -
+  severity)`` for ``plant_node_id``, using the exact linear-ramp shape
+  :mod:`daysofcover.engine.ramp` already validated against case 12 --
+  a disrupted plant does not production-plan at zero one day and full
+  capacity the next, it ramps.
+
+On-order inventory position (see :func:`daysofcover.engine.state`'s
+module docstring) is now always read from
+:meth:`daysofcover.engine.shipments.NetworkShipments.outstanding_at_node`,
+the real per-shipment records, never from a separately maintained
+counter.
+
+Still deliberately out of scope: the per-customer backlog ledger
+mentioned above.
 """
 
 from __future__ import annotations
@@ -81,6 +113,7 @@ from daysofcover.engine.allocation import (
     allocate_finished_goods_to_orders,
     supplier_split_ratios,
 )
+from daysofcover.engine.disruption_state import DisruptionState
 from daysofcover.engine.production import (
     ProductionQueue,
     consume_components,
@@ -162,6 +195,7 @@ def advance_one_day(
     component_suppliers: list[SupplySource] | None = None,
     lane_by_supplier: dict[str, str] | None = None,
     primary_down_since_day: int | None = None,
+    disruption_state: DisruptionState | None = None,
 ) -> DailyStepReport:
     """Advance one plant, across every SKU in ``sku_specs``, by one day.
 
@@ -194,6 +228,13 @@ def advance_one_day(
     is that lane's own lognormal lead-time draw, the same as any other
     call to :meth:`~daysofcover.engine.shipments.NetworkShipments.ship`.
 
+    ``disruption_state`` is ``None`` by default, which leaves every
+    earlier session's call exactly as it was -- see the module
+    docstring for what turning it on changes: held-back receiving for a
+    fully closed lane, severity-scaled capacity for a partial one, a
+    fully-down plant skipping its own reorder decision, and
+    severity-scaled production capacity for every SKU at this plant.
+
     See the module docstring for order of operations.
     """
     plant = state.node_index(plant_node_id)
@@ -208,14 +249,18 @@ def advance_one_day(
     )
     components_received = 0.0
     for lane_id in receive_lane_ids:
+        # a fully closed lane holds whatever has already arrived rather
+        # than releasing it -- see disruption_state.py's module
+        # docstring for why this is a binary check, not proportional.
+        if disruption_state is not None and disruption_state.is_fully_down(
+            element_id=lane_id, day=current_day
+        ):
+            continue
         components_received += shipments.receive(
             lane_id=lane_id, part_id=component_part_id, current_day=current_day
         )
     if receive_lane_ids:
         state.on_hand[plant, component_idx] += components_received
-        state.on_order[plant, component_idx] = max(
-            0.0, state.on_order[plant, component_idx] - components_received
-        )
 
     # 1. every SKU's due production completes and today's customer
     #    orders are allocated against what's on the shelf -- served by
@@ -247,10 +292,21 @@ def advance_one_day(
             for order, quantity in zip(spec.orders, fulfilled, strict=True)
         )
 
+    # a fully or partially down plant produces at a scaled-down capacity
+    # for every SKU, following the same linear-ramp shape ramp.py
+    # already validated against case 12 -- see the module docstring.
+    # 1.0 (no disruption_state, or none active for this node today) is
+    # every earlier session's behaviour, unchanged.
+    plant_capacity_fraction = 1.0
+    if disruption_state is not None:
+        plant_capacity_fraction = 1.0 - disruption_state.severity_at(
+            element_id=plant_node_id, day=current_day
+        )
+
     # 2. how much of the shared component each SKU would consume today
-    #    if supply were unlimited, capped only by its own capacity and
-    #    batch size -- reuses feasible_production_units rather than
-    #    re-deriving the same batch-rounding logic here.
+    #    if supply were unlimited, capped only by its own (disruption-
+    #    scaled) capacity and batch size -- reuses feasible_production_
+    #    units rather than re-deriving the same batch-rounding logic here.
     component_line_by_sku: dict[str, BOMLine] = {}
     requested_component_by_sku: dict[str, float] = {}
     for spec in sku_specs:
@@ -261,7 +317,7 @@ def advance_one_day(
             continue
         component_line_by_sku[spec.finished_sku_id] = component_line
         unconstrained_units = feasible_production_units(
-            capacity_per_week=spec.capacity_per_week,
+            capacity_per_week=spec.capacity_per_week * plant_capacity_fraction,
             on_hand_by_part={line.part_id: _UNLIMITED for line in spec.bom},
             bom=spec.bom,
             batch_size=spec.batch_size,
@@ -315,7 +371,7 @@ def advance_one_day(
             }
 
         feasible = feasible_production_units(
-            capacity_per_week=spec.capacity_per_week,
+            capacity_per_week=spec.capacity_per_week * plant_capacity_fraction,
             on_hand_by_part=on_hand_by_part,
             bom=spec.bom,
             batch_size=spec.batch_size,
@@ -347,30 +403,48 @@ def advance_one_day(
     # 4. the plant's own periodic-review order-up-to decision for
     #    component_part_id, made last so it sees today's true ending
     #    inventory position -- on-hand plus whatever is already on
-    #    order, so a shipment already in the pipeline is never ordered
-    #    again. Off entirely when order_up_to or review_period_days is
-    #    None, or today is not a review day. component_suppliers is
-    #    None (the default): the single-lane reorder from sessions 19
-    #    and 20, unchanged -- the desired quantity capped against
-    #    inbound_lane_id's own moq and remaining weekly capacity, a
-    #    desired order that can't clear the moq even after capacity
-    #    capping it deferred to zero rather than placed as a partial,
-    #    sub-moq shipment. component_suppliers given: the same desired
-    #    quantity is split across every supplier by
-    #    supplier_split_ratios, then each supplier's own share is
-    #    independently capped against that supplier's own lane -- one
-    #    supplier's tight lane never holds back another's.
+    #    order (read from the real shipment records, never a separate
+    #    counter -- see state.py's module docstring), so a shipment
+    #    already in the pipeline is never ordered again. Off entirely
+    #    when order_up_to or review_period_days is None, today is not a
+    #    review day, or plant_node_id itself is fully down (the
+    #    real-engine analog of case 4's order-pausing mechanic).
+    #    component_suppliers is None (the default): the single-lane
+    #    reorder from sessions 19 and 20, unchanged -- the desired
+    #    quantity capped against inbound_lane_id's own moq and
+    #    disruption-scaled remaining weekly capacity, a desired order
+    #    that can't clear the moq even after capacity capping it
+    #    deferred to zero rather than placed as a partial, sub-moq
+    #    shipment. component_suppliers given: the same desired quantity
+    #    is split across every supplier by supplier_split_ratios, then
+    #    each supplier's own share is independently capped against that
+    #    supplier's own (disruption-scaled) lane -- one supplier's tight
+    #    lane never holds back another's.
     component_ordered = 0.0
     is_review_day = (
         order_up_to is not None
         and review_period_days is not None
         and current_day % review_period_days == 0
+        and not (
+            disruption_state is not None
+            and disruption_state.is_fully_down(element_id=plant_node_id, day=current_day)
+        )
     )
+
+    def _lane_capacity_remaining(lane_id: str) -> float:
+        """A lane's own remaining weekly capacity, scaled by its current severity."""
+        capacity = shipments.lanes[lane_id].capacity_remaining(current_day=current_day)
+        if disruption_state is None:
+            return capacity
+        return capacity * (1.0 - disruption_state.severity_at(element_id=lane_id, day=current_day))
+
     if is_review_day and component_suppliers is not None:
         assert order_up_to is not None  # implied by is_review_day
         if lane_by_supplier is None:
             raise ValueError("lane_by_supplier is required when component_suppliers is given")
-        position = float(state.on_hand[plant, component_idx] + state.on_order[plant, component_idx])
+        position = float(state.on_hand[plant, component_idx]) + shipments.outstanding_at_node(
+            node_id=plant_node_id, part_id=component_part_id
+        )
         desired_quantity = max(0.0, order_up_to - position)
         ratios = supplier_split_ratios(
             suppliers=component_suppliers,
@@ -386,7 +460,7 @@ def advance_one_day(
             supplier_ordered = cap_order_quantity(
                 desired_quantity=desired_quantity * ratio,
                 moq=lane_shipments.lane.moq,
-                capacity_remaining=lane_shipments.capacity_remaining(current_day=current_day),
+                capacity_remaining=_lane_capacity_remaining(lane_id),
             )
             if supplier_ordered > 0:
                 if rng is None:
@@ -398,17 +472,18 @@ def advance_one_day(
                     order_day=current_day,
                     rng=rng,
                 )
-                state.on_order[plant, component_idx] += supplier_ordered
                 component_ordered += supplier_ordered
     elif is_review_day and inbound_lane_id is not None:
         assert order_up_to is not None  # implied by is_review_day
-        position = float(state.on_hand[plant, component_idx] + state.on_order[plant, component_idx])
+        position = float(state.on_hand[plant, component_idx]) + shipments.outstanding_at_node(
+            node_id=plant_node_id, part_id=component_part_id
+        )
         desired_quantity = max(0.0, order_up_to - position)
         lane_shipments = shipments.lanes[inbound_lane_id]
         component_ordered = cap_order_quantity(
             desired_quantity=desired_quantity,
             moq=lane_shipments.lane.moq,
-            capacity_remaining=lane_shipments.capacity_remaining(current_day=current_day),
+            capacity_remaining=_lane_capacity_remaining(inbound_lane_id),
         )
         if component_ordered > 0:
             if rng is None:
@@ -420,7 +495,6 @@ def advance_one_day(
                 order_day=current_day,
                 rng=rng,
             )
-            state.on_order[plant, component_idx] += component_ordered
 
     return DailyStepReport(
         components_received=components_received,

@@ -5,6 +5,9 @@ that the chassis the rest of the engine reads and writes through is
 sized and indexed correctly, for both index spaces (node, part) and
 (node, sku). See :mod:`daysofcover.engine.state` for what it deliberately
 does not do yet.
+
+Session 22 removed the ``on_order`` array this file used to check the
+sizing of -- see that module's docstring for why.
 """
 
 from __future__ import annotations
@@ -65,10 +68,8 @@ def test_from_network_sizes_arrays_to_nodes_and_parts() -> None:
     state = NetworkState.from_network(_tiny_network())
 
     assert state.on_hand.shape == (2, 2)
-    assert state.on_order.shape == (2, 2)
     assert state.backlog.shape == (2, 2)
     assert np.all(state.on_hand == 0.0)
-    assert np.all(state.on_order == 0.0)
     assert np.all(state.backlog == 0.0)
 
 

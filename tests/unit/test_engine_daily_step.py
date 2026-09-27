@@ -22,6 +22,14 @@ check the dual-source split itself: the fixed ratio in the ordinary
 case, the contingent full switch to the backup once the primary has
 been down long enough, and one supplier's own lane capacity capping
 only that supplier's share.
+
+Session 22's tests check ``disruption_state`` wiring itself: a fully
+down lane holding cargo already in transit instead of releasing it, a
+partial severity throttling new-order capacity, a fully down plant
+skipping its reorder decision entirely, and a disrupted plant's
+production capacity scaling by severity. See
+:mod:`daysofcover.engine.disruption_state` for the resolution logic
+these tests build on, which has its own dedicated test file.
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ import numpy as np
 
 from daysofcover.engine.allocation import CustomerOrder
 from daysofcover.engine.daily_step import SkuProductionSpec, advance_one_day
+from daysofcover.engine.disruption_state import DisruptionState
 from daysofcover.engine.production import ProductionQueue
 from daysofcover.engine.shipments import NetworkShipments
 from daysofcover.engine.state import NetworkState
@@ -44,6 +53,7 @@ from daysofcover.models.network import (
     Part,
     SupplySource,
 )
+from daysofcover.models.scenario import Disruption, Scenario
 
 
 def _network(*, capacity_per_week: float = 1000.0, moq: float | None = None) -> Network:
@@ -423,7 +433,7 @@ def test_reorder_places_nothing_on_a_non_review_day_then_orders_up_to_target() -
     # day 3 is a review day again, but on-hand already sits at the target: no order
     assert reports[3].component_ordered == 0.0
     assert state.on_hand[plant, component_idx] == 20.0
-    assert state.on_order[plant, component_idx] == 0.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 0.0
 
 
 def test_reorder_never_double_orders_a_shipment_already_in_transit() -> None:
@@ -454,7 +464,7 @@ def test_reorder_never_double_orders_a_shipment_already_in_transit() -> None:
             rng=rng,
         )
         on_hand = float(state.on_hand[plant, component_idx])
-        on_order = float(state.on_order[plant, component_idx])
+        on_order = shipments.outstanding_at_node(node_id="plant-1", part_id="part-a")
         snapshots.append((report, on_hand, on_order))
 
     report0, _on_hand0, on_order0 = snapshots[0]
@@ -483,8 +493,6 @@ def test_reorder_is_capped_by_the_lanes_remaining_weekly_capacity() -> None:
     network = _network(capacity_per_week=15.0)
     state = NetworkState.from_network(network)
     shipments = NetworkShipments.from_network(network)
-    plant = state.node_index("plant-1")
-    component_idx = state.part_index("part-a")
     rng = np.random.default_rng(seed=1)
 
     report = advance_one_day(
@@ -502,7 +510,7 @@ def test_reorder_is_capped_by_the_lanes_remaining_weekly_capacity() -> None:
 
     # capped at the lane's 15-unit weekly capacity, not the full 20-unit target
     assert report.component_ordered == 15.0
-    assert state.on_order[plant, component_idx] == 15.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 15.0
 
 
 def test_reorder_below_moq_is_deferred_entirely_rather_than_placed_partial() -> None:
@@ -511,8 +519,6 @@ def test_reorder_below_moq_is_deferred_entirely_rather_than_placed_partial() -> 
     network = _network(moq=50.0)
     state = NetworkState.from_network(network)
     shipments = NetworkShipments.from_network(network)
-    plant = state.node_index("plant-1")
-    component_idx = state.part_index("part-a")
     rng = np.random.default_rng(seed=1)
 
     report = advance_one_day(
@@ -531,7 +537,7 @@ def test_reorder_below_moq_is_deferred_entirely_rather_than_placed_partial() -> 
     # the 20-unit desired order would round up to the 50-unit MOQ, but this
     # lane's capacity (1000/week, well above 50) has no trouble clearing it
     assert report.component_ordered == 50.0
-    assert state.on_order[plant, component_idx] == 50.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 50.0
 
 
 def test_reorder_below_moq_and_capacity_together_is_deferred_to_zero() -> None:
@@ -558,7 +564,7 @@ def test_reorder_below_moq_and_capacity_together_is_deferred_to_zero() -> None:
     )
 
     assert report.component_ordered == 0.0
-    assert state.on_order[plant, component_idx] == 0.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 0.0
     assert state.on_hand[plant, component_idx] == 0.0
 
 
@@ -629,8 +635,6 @@ def test_dual_source_reorder_splits_by_the_parts_fixed_ratio() -> None:
     network = _dual_source_network(primary_split=0.7, backup_split=0.3)
     state = NetworkState.from_network(network)
     shipments = NetworkShipments.from_network(network)
-    plant = state.node_index("plant-1")
-    component_idx = state.part_index("part-a")
     rng = np.random.default_rng(seed=1)
     part_a = network.parts[0]
 
@@ -651,17 +655,15 @@ def test_dual_source_reorder_splits_by_the_parts_fixed_ratio() -> None:
 
     # nothing on hand or on order yet: the full 100-unit target splits 70/30
     assert report.component_ordered == 100.0
-    assert shipments.lanes["lane-primary"]._fifo["part-a"][0][1] == 70.0
-    assert shipments.lanes["lane-backup"]._fifo["part-a"][0][1] == 30.0
-    assert state.on_order[plant, component_idx] == 100.0
+    assert shipments.lanes["lane-primary"].outstanding(part_id="part-a") == 70.0
+    assert shipments.lanes["lane-backup"].outstanding(part_id="part-a") == 30.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 100.0
 
 
 def test_dual_source_reorder_switches_entirely_to_backup_once_primary_is_down_long_enough() -> None:
     network = _dual_source_network(primary_split=0.7, backup_split=0.3, detect_delay_days=2.0)
     state = NetworkState.from_network(network)
     shipments = NetworkShipments.from_network(network)
-    plant = state.node_index("plant-1")
-    component_idx = state.part_index("part-a")
     rng = np.random.default_rng(seed=1)
     part_a = network.parts[0]
 
@@ -683,9 +685,9 @@ def test_dual_source_reorder_switches_entirely_to_backup_once_primary_is_down_lo
 
     # the whole order goes to the backup; the primary's lane gets nothing
     assert report.component_ordered == 100.0
-    assert "part-a" not in shipments.lanes["lane-primary"]._fifo
-    assert shipments.lanes["lane-backup"]._fifo["part-a"][0][1] == 100.0
-    assert state.on_order[plant, component_idx] == 100.0
+    assert shipments.lanes["lane-primary"].outstanding(part_id="part-a") == 0.0
+    assert shipments.lanes["lane-backup"].outstanding(part_id="part-a") == 100.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 100.0
 
 
 def test_dual_source_reorder_caps_each_suppliers_share_by_its_own_lane_only() -> None:
@@ -694,8 +696,6 @@ def test_dual_source_reorder_caps_each_suppliers_share_by_its_own_lane_only() ->
     network = _dual_source_network(primary_split=0.7, backup_split=0.3, backup_capacity=10.0)
     state = NetworkState.from_network(network)
     shipments = NetworkShipments.from_network(network)
-    plant = state.node_index("plant-1")
-    component_idx = state.part_index("part-a")
     rng = np.random.default_rng(seed=1)
     part_a = network.parts[0]
 
@@ -717,6 +717,152 @@ def test_dual_source_reorder_caps_each_suppliers_share_by_its_own_lane_only() ->
     # primary's desired 70-unit share ships in full; backup's desired
     # 30-unit share is capped at its lane's 10-unit weekly capacity
     assert report.component_ordered == 80.0
-    assert shipments.lanes["lane-primary"]._fifo["part-a"][0][1] == 70.0
-    assert shipments.lanes["lane-backup"]._fifo["part-a"][0][1] == 10.0
-    assert state.on_order[plant, component_idx] == 80.0
+    assert shipments.lanes["lane-primary"].outstanding(part_id="part-a") == 70.0
+    assert shipments.lanes["lane-backup"].outstanding(part_id="part-a") == 10.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 80.0
+
+
+def test_fully_down_lane_holds_cargo_already_in_transit_instead_of_releasing_it() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    rng = np.random.default_rng(seed=1)
+    shipments.ship(lane_id="lane-1", part_id="part-a", quantity=50.0, order_day=0, rng=rng)
+
+    disruption = Disruption(
+        element_id="lane-1", start_day=0, severity_fraction=1.0, duration_days=10
+    )
+    scenario = Scenario(id="s1", name="Closure", disruptions=[disruption], seed=1)
+    disruption_state = DisruptionState.from_scenario(scenario, network=network)
+
+    # day 2: the shipment's own (deterministic) arrival day, but the
+    # lane is fully down -- it should stay queued, not land on the shelf.
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=2,
+        disruption_state=disruption_state,
+    )
+    assert report.components_received == 0.0
+    assert state.on_hand[state.node_index("plant-1"), state.part_index("part-a")] == 0.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 50.0
+
+    # day 11: duration_days=10 with no ramp means an instant reopening;
+    # the held cargo, already past its own arrival day, lands now.
+    report2 = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=11,
+        disruption_state=disruption_state,
+    )
+    assert report2.components_received == 50.0
+    assert state.on_hand[state.node_index("plant-1"), state.part_index("part-a")] == 50.0
+
+
+def test_partial_lane_severity_scales_capacity_for_new_orders() -> None:
+    network = _network(capacity_per_week=20.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    rng = np.random.default_rng(seed=1)
+
+    disruption = Disruption(
+        element_id="lane-1", start_day=0, severity_fraction=0.5, duration_days=100
+    )
+    scenario = Scenario(id="s1", name="Partial slowdown", disruptions=[disruption], seed=1)
+    disruption_state = DisruptionState.from_scenario(scenario, network=network)
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=0,
+        order_up_to=100.0,
+        review_period_days=1,
+        rng=rng,
+        disruption_state=disruption_state,
+    )
+
+    # the lane's 20-unit weekly capacity is halved by the 0.5 severity
+    assert report.component_ordered == 10.0
+
+
+def test_fully_down_plant_skips_the_whole_reorder_decision() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    rng = np.random.default_rng(seed=1)
+
+    disruption = Disruption(
+        element_id="plant-1", start_day=0, severity_fraction=1.0, duration_days=5
+    )
+    scenario = Scenario(id="s1", name="Plant down", disruptions=[disruption], seed=1)
+    disruption_state = DisruptionState.from_scenario(scenario, network=network)
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[],
+        current_day=0,
+        order_up_to=100.0,
+        review_period_days=1,
+        rng=rng,
+        disruption_state=disruption_state,
+    )
+
+    # the plant itself is fully down: no order at all, even on a review day
+    assert report.component_ordered == 0.0
+    assert shipments.outstanding_at_node(node_id="plant-1", part_id="part-a") == 0.0
+
+
+def test_disrupted_plant_scales_production_capacity_by_severity() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    component_idx = state.part_index("part-a")
+    state.on_hand[plant, component_idx] = 1_000.0  # never the binding constraint
+    production_queue = ProductionQueue()
+
+    disruption = Disruption(
+        element_id="plant-1", start_day=0, severity_fraction=0.6, duration_days=100
+    )
+    scenario = Scenario(id="s1", name="Plant slowdown", disruptions=[disruption], seed=1)
+    disruption_state = DisruptionState.from_scenario(scenario, network=network)
+
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=700.0,  # 100 units/day at full capacity
+        batch_size=1.0,
+        production_lead_time_days=3.0,
+        orders=[],
+        production_queue=production_queue,
+    )
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id="lane-1",
+        sku_specs=[spec],
+        current_day=0,
+        disruption_state=disruption_state,
+    )
+
+    # 0.6 severity leaves 40% of capacity: 100 * 0.4 = 40 units/day
+    assert report.sku_reports[0].production_started == 40.0
