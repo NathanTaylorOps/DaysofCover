@@ -11,16 +11,18 @@ maximises T itself, as a genuine decision variable, subject to zero
 lost sales -- linear, not bilinear, because T only ever multiplies
 *given constants* (a capacity, a demand rate), never another decision
 variable, so no bisection is needed for this flat/aggregate case (only
-the later weekly time-indexed variant needs that). Buffer (minimise
-holding cost on added inventory subject to zero lost sales) is Stage
-2's third LP; it shares this same machinery but isn't built yet --
-cases 7, 8 and 9 (this session's targets) never exercise it, so it's
-sequenced into a later Stage 2 session along with the weekly
-time-indexed/bisection variant, the AND/OR structural screen, and the
-``daysofcover cover`` CLI command.
+the later weekly time-indexed variant needs that). Buffer minimises
+holding cost on *added* inventory (``delta_r``, a free decision
+variable at every (node, commodity) pair) subject to zero lost sales at
+a fixed horizon -- ``r`` in the shared balance/demand rows becomes
+``r_0 + delta_r`` wherever buffer mode is on, everything else in
+:func:`_build` is unchanged. The weekly time-indexed/bisection variant
+and the AND/OR structural screen (:mod:`daysofcover.lp.structure`) are
+separate modules; the ``daysofcover cover`` CLI command wires all of
+this together.
 
-Two deliberate extensions beyond the build plan's literal transcription
-of the paper's equations, both flagged here because they're this
+Three deliberate extensions beyond the build plan's literal transcription
+of the paper's equations, all flagged here because they're this
 implementer's call, same as the max-T formulation itself:
 
 - **Commodities are tagged, not bare strings.** A part id and a SKU id
@@ -41,12 +43,36 @@ implementer's call, same as the max-T formulation itself:
   sits at that order's own node, plant or customer alike, with no
   special case for which kind of node it is. So here, wherever a
   (node, sku) pair has a real demand rate, the ordinary balance
-  inequality at that pair is replaced by one equality that folds
-  everything together: ``r + u + inflow - outflow - d*T + l = 0``. This
-  is what makes validation case 7's "cover equals the hand-computed
-  inventory runway" arithmetic actually come out to a customer's own
-  ``r / d`` when it is the last node in the chain -- see the module's
-  own test file for the full derivation.
+  inequality at that pair is replaced by one inequality that folds
+  everything together: ``r + u + inflow - outflow - d*T + l >= 0``.
+  ``>=``, not ``=``: an equality would force lost sales negative
+  whenever available supply exceeds demand at whatever T is being
+  asked about, which is the ordinary case of "this node hasn't run out
+  yet", not an error -- the inequality leaves that surplus as implicit,
+  un-variabled ending inventory instead. (An earlier version of this
+  module used an equality here; it went undetected by cases 7 and 8
+  because both are single-customer, single-SKU networks where the
+  optimal point happens to sit exactly on the boundary where equality
+  and inequality coincide -- it surfaced once ``daysofcover cover`` ran
+  the real, multi-customer Moreton Marine network, where several
+  demand pairs pinning T to different, non-coinciding ratios made the
+  equality version spuriously infeasible.) This is what makes
+  validation case 7's "cover equals the hand-computed inventory
+  runway" arithmetic actually come out to a customer's own ``r / d``
+  when it is the last node in the chain -- see the module's own test
+  file for the full derivation.
+- **The buffer LP's holding cost, ``h_{i,p}``, is a rate times a unit
+  value, not a bare figure.** The schema's own ``Node.holding_cost_rate``
+  is exactly that: a rate, not a $/unit number, so it needs multiplying
+  by *something's* unit value to become a real cost coefficient. Read
+  here as ``holding_cost_rate * unit_cost`` for a part (``Part.unit_cost``
+  is already a cost) and ``holding_cost_rate * price * (1 -
+  margin_fraction)`` for a SKU (its *cost* to hold, not its selling
+  price, since a margin is revenue the SKU hasn't earned yet by sitting
+  in a warehouse). A node with no ``holding_cost_rate`` at all gets a
+  zero coefficient there -- no cost data, no penalty, and the solver is
+  free to place buffer there for nothing, which is a limitation to note
+  rather than a hidden bug.
 
 Node and lane capacities are per day (``capacity_per_week / 7``); a
 node with no ``capacity_per_week`` at all has no capacity row (nothing
@@ -147,6 +173,8 @@ class _ResolvedNetwork:
     bom_by_sku: dict[str, tuple[BOMLine, ...]]
     margin_by_sku: dict[str, float]
     demand_rate: dict[tuple[str, str], float]
+    holding_cost_rate_by_node: dict[str, float]
+    unit_value_by_commodity: dict[CommodityKey, float]
 
 
 def _resolve(network: Network, *, removed_element_id: str | None) -> _ResolvedNetwork:
@@ -207,6 +235,22 @@ def _resolve(network: Network, *, removed_element_id: str | None) -> _ResolvedNe
             # (not-yet-built) time-indexed variant reads instead.
             demand_rate[(customer.id, sku_id)] = profile.base_weekly_rate / 7.0
 
+    holding_cost_rate_by_node = {
+        n.id: n.holding_cost_rate for n in live_nodes if n.holding_cost_rate is not None
+    }
+    unit_value_by_commodity: dict[CommodityKey, float] = {
+        part_key(part.id): part.unit_cost * _fx_rate(part.currency, network)
+        for part in network.parts
+    }
+    unit_value_by_commodity.update(
+        {
+            sku_key(sku.id): sku.price[sku.currency]
+            * (1.0 - sku.margin_fraction)
+            * _fx_rate(sku.currency, network)
+            for sku in network.skus
+        }
+    )
+
     return _ResolvedNetwork(
         node_ids=tuple(n.id for n in live_nodes),
         lane_ids=tuple(ln.id for ln in live_lanes),
@@ -221,6 +265,8 @@ def _resolve(network: Network, *, removed_element_id: str | None) -> _ResolvedNe
         bom_by_sku=bom_by_sku,
         margin_by_sku=margin_by_sku,
         demand_rate=demand_rate,
+        holding_cost_rate_by_node=holding_cost_rate_by_node,
+        unit_value_by_commodity=unit_value_by_commodity,
     )
 
 
@@ -281,10 +327,6 @@ class _LPBuilder:
         for col, coeff in objective.items():
             c[col] = -coeff if maximize else coeff
         bounds = list(zip(self.lower, self.upper, strict=True))
-        # scipy-stubs' linprog overloads don't model sparse A_ub/A_eq
-        # inputs (csr_matrix) as compatible with their dense-array
-        # protocol, even though linprog itself accepts them at runtime
-        # for method="highs" -- a known stub gap, not a real type error.
         result = linprog(
             c,
             A_ub=self._sparse(self.ub_rows) if self.ub_rows else None,
@@ -303,6 +345,7 @@ class _Columns:
     u: dict[tuple[str, CommodityKey], int]
     lost: dict[tuple[str, str], int]
     t: int | None
+    delta_r: dict[tuple[str, CommodityKey], int]
 
 
 def _t_rhs(
@@ -328,17 +371,33 @@ def _build(
     *,
     starting_inventory: dict[tuple[str, CommodityKey], float],
     t_fixed: float | None,
+    buffer: bool = False,
 ) -> tuple[_LPBuilder, _Columns]:
-    """Every column and row shared by the impact and cover LPs.
+    """Every column and row shared by the impact, cover and buffer LPs.
 
-    ``t_fixed`` is the horizon in days for the impact LP; ``None`` means
-    the cover LP, where T is a column in its own right
-    (:attr:`_Columns.t`) instead of a given number.
+    ``t_fixed`` is the horizon in days for the impact and buffer LPs;
+    ``None`` means the cover LP, where T is a column in its own right
+    (:attr:`_Columns.t`) instead of a given number. ``buffer=True`` adds
+    a free ``delta_r`` column at every (node, commodity) pair -- folded
+    into the same balance/demand rows as ``r_0`` itself, so ``r`` reads
+    as ``r_0 + delta_r`` throughout -- and pins lost sales at zero
+    regardless of ``t_fixed``, matching the buffer LP's own "subject to
+    zero lost sales" constraint (see the module docstring's third
+    extension for ``delta_r``'s cost coefficients).
     """
     b = _LPBuilder()
     commodities: list[CommodityKey] = [part_key(p) for p in resolved.part_ids] + [
         sku_key(s) for s in resolved.sku_ids
     ]
+
+    delta_r_cols: dict[tuple[str, CommodityKey], int] = {}
+    if buffer:
+        assert t_fixed is not None, "the buffer LP needs a fixed horizon, same as impact"
+        delta_r_cols = {
+            (node_id, commodity): b.add_column()
+            for node_id in resolved.node_ids
+            for commodity in commodities
+        }
 
     x_cols: dict[tuple[str, CommodityKey], int] = {
         (lane_id, commodity): b.add_column()
@@ -354,10 +413,11 @@ def _build(
         for node_id in resolved.plant_node_ids:
             u_cols[(node_id, sku_key(sku_id))] = b.add_column()
 
-    # cover pins lost sales at exactly zero rather than omitting l
-    # entirely, so the same row-building code below works unchanged for
-    # both LPs -- see _t_rhs for the other half of that symmetry.
-    l_upper = math.inf if t_fixed is not None else 0.0
+    # cover and buffer both pin lost sales at exactly zero rather than
+    # omitting l entirely, so the same row-building code below works
+    # unchanged for all three LPs -- see _t_rhs for the other half of
+    # that symmetry.
+    l_upper = 0.0 if (buffer or t_fixed is None) else math.inf
     l_cols: dict[tuple[str, str], int] = {
         pair: b.add_column(upper=l_upper) for pair in resolved.demand_rate
     }
@@ -389,6 +449,10 @@ def _build(
                     if sku_u_col is not None:
                         row[sku_u_col] = row.get(sku_u_col, 0.0) - bom_quantity
 
+            delta_r_col = delta_r_cols.get((node_id, commodity))
+            if delta_r_col is not None:
+                row[delta_r_col] = row.get(delta_r_col, 0.0) + 1.0
+
             r_value = starting_inventory.get((node_id, commodity), 0.0)
             demand_key = (node_id, commodity_id) if kind == "sku" else None
             rate = resolved.demand_rate.get(demand_key) if demand_key is not None else None
@@ -398,13 +462,18 @@ def _build(
                     b.add_ge(row, -r_value)
                 continue
 
-            # a demand node's own on-hand folds directly into the
-            # equality, rather than a separate slack inequality -- see
-            # the module docstring's second extension.
+            # a demand node's own on-hand folds directly into an
+            # inequality, not an equality -- see the module docstring's
+            # second extension for why it has to be ">=": an equality
+            # would force lost sales negative whenever available supply
+            # (stock plus net inflow) exceeds demand at this T, which is
+            # exactly the ordinary, unremarkable case of "nothing ran out
+            # yet". ">=" leaves the surplus as implicit ending inventory
+            # instead, with no variable of its own needed for it.
             l_col = l_cols[demand_key]  # type: ignore[index]
             row[l_col] = row.get(l_col, 0.0) + 1.0
             rhs = _t_rhs(row, rate, t_fixed=t_fixed, t_col=t_col) - r_value
-            b.add_eq(row, rhs)
+            b.add_ge(row, rhs)
 
     for node_id in resolved.node_ids:
         cap = resolved.node_capacity_per_day[node_id]
@@ -425,7 +494,7 @@ def _build(
         rhs = _t_rhs(row, resolved.lane_capacity_per_day[lane_id], t_fixed=t_fixed, t_col=t_col)
         b.add_le(row, rhs)
 
-    return b, _Columns(x=x_cols, u=u_cols, lost=l_cols, t=t_col)
+    return b, _Columns(x=x_cols, u=u_cols, lost=l_cols, t=t_col, delta_r=delta_r_cols)
 
 
 @dataclass(frozen=True)
@@ -491,3 +560,54 @@ def solve_cover(
     if not result.success:
         return CoverResult(status=result.message, cover_days=math.nan)
     return CoverResult(status="optimal", cover_days=float(result.x[columns.t]))
+
+
+def _holding_cost(resolved: _ResolvedNetwork, node_id: str, commodity: CommodityKey) -> float:
+    """``h_{i,p}`` -- see the module docstring's third extension for why this is a product."""
+    rate = resolved.holding_cost_rate_by_node.get(node_id)
+    if rate is None:
+        return 0.0
+    return rate * resolved.unit_value_by_commodity.get(commodity, 0.0)
+
+
+@dataclass(frozen=True)
+class BufferResult:
+    status: str
+    total_holding_cost: float
+    added_inventory: dict[tuple[str, CommodityKey], float]
+
+
+def solve_buffer(
+    network: Network,
+    *,
+    removed_element_id: str | None,
+    horizon_days: float,
+    starting_inventory: dict[tuple[str, CommodityKey], float],
+) -> BufferResult:
+    """The buffer LP: minimise holding cost on added inventory, subject to zero lost sales.
+
+    ``horizon_days`` plays the same role as the impact LP's own
+    ``horizon_days`` -- normally ``recovery_e(P80)``, a caller-supplied
+    estimate. ``added_inventory`` only lists the (node, commodity) pairs
+    the solver actually used (a positive ``delta_r``); every other pair
+    that got a free column needed none.
+    """
+    resolved = _resolve(network, removed_element_id=removed_element_id)
+    builder, columns = _build(
+        resolved, starting_inventory=starting_inventory, t_fixed=horizon_days, buffer=True
+    )
+    objective = {
+        col: _holding_cost(resolved, node_id, commodity)
+        for (node_id, commodity), col in columns.delta_r.items()
+    }
+    result = builder.solve(objective, maximize=False)
+    if not result.success:
+        return BufferResult(status=result.message, total_holding_cost=math.nan, added_inventory={})
+    added_inventory = {
+        key: float(result.x[col]) for key, col in columns.delta_r.items() if result.x[col] > 1e-9
+    }
+    return BufferResult(
+        status="optimal",
+        total_holding_cost=float(result.fun),
+        added_inventory=added_inventory,
+    )
