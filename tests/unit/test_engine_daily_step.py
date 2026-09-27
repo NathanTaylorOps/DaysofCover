@@ -30,6 +30,14 @@ skipping its reorder decision entirely, and a disrupted plant's
 production capacity scaling by severity. See
 :mod:`daysofcover.engine.disruption_state` for the resolution logic
 these tests build on, which has its own dedicated test file.
+
+Session 23's tests check ``distribution`` wiring itself: with no tree
+given, every existing test above still passes unmodified (fulfillment
+stays at the plant, exactly as before); with one given, an order is
+fulfilled at its own customer's node once goods have actually arrived
+there, and a customer absent from the tree still falls back to the
+plant. See :mod:`daysofcover.engine.distribution` for the push
+resolution logic itself, which has its own dedicated test file.
 """
 
 from __future__ import annotations
@@ -39,6 +47,7 @@ import numpy as np
 from daysofcover.engine.allocation import CustomerOrder
 from daysofcover.engine.daily_step import SkuProductionSpec, advance_one_day
 from daysofcover.engine.disruption_state import DisruptionState
+from daysofcover.engine.distribution import build_distribution_tree
 from daysofcover.engine.production import ProductionQueue
 from daysofcover.engine.shipments import NetworkShipments
 from daysofcover.engine.state import NetworkState
@@ -866,3 +875,170 @@ def test_disrupted_plant_scales_production_capacity_by_severity() -> None:
 
     # 0.6 severity leaves 40% of capacity: 100 * 0.4 = 40 units/day
     assert report.sku_reports[0].production_started == 40.0
+
+
+def _distribution_network() -> Network:
+    # plant-1's usual inbound supplier lane, plus one real distribution
+    # lane out to a customer-typed node -- the shape session 23's
+    # docstring describes: a plant shipping to a customer over a real,
+    # capacitated, lead-timed lane, not straight out of thin air.
+    supplier = Node(id="supplier-1", name="Supplier One", type=NodeType.SUPPLIER, region="AU")
+    plant = Node(id="plant-1", name="Plant One", type=NodeType.PLANT, region="AU")
+    customer_node = Node(id="cust-1", name="Customer One", type=NodeType.CUSTOMER, region="AU")
+    lane_in = Lane(
+        id="lane-1",
+        origin_id="supplier-1",
+        destination_id="plant-1",
+        mode=LaneMode.OCEAN,
+        lead_time_days_median=2.0,
+        lead_time_days_sigma=0.0,
+        capacity_per_week=1000.0,
+        unit_cost=1.0,
+        currency="AUD",
+        allow_crossing=False,
+    )
+    lane_dist = Lane(
+        id="lane-dist",
+        origin_id="plant-1",
+        destination_id="cust-1",
+        mode=LaneMode.ROAD,
+        lead_time_days_median=1.0,
+        lead_time_days_sigma=0.0,  # deterministic: always arrives one day later
+        capacity_per_week=1000.0,
+        unit_cost=1.0,
+        currency="AUD",
+        allow_crossing=False,
+    )
+    part_a = Part(
+        id="part-a",
+        name="Part A",
+        suppliers=[SupplySource(node_id="supplier-1", split_ratio=1.0)],
+        unit_cost=1.0,
+        currency="AUD",
+    )
+    sku_a = SKU(
+        id="sku-a",
+        name="SKU A",
+        price={"AUD": 100.0},
+        margin_fraction=0.4,
+        currency="AUD",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        production_lead_time_days=3.0,
+        batch_size=1.0,
+    )
+    return Network(
+        base_currency="AUD",
+        nodes=[supplier, plant, customer_node],
+        lanes=[lane_in, lane_dist],
+        parts=[part_a],
+        skus=[sku_a],
+    )
+
+
+def test_order_is_fulfilled_at_the_customers_own_node_once_goods_have_arrived() -> None:
+    network = _distribution_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    tree = build_distribution_tree(network, plant_node_id="plant-1")
+    plant = state.node_index("plant-1")
+    cust = state.node_index("cust-1")
+    sku_idx = state.sku_index("sku-a")
+    state.finished_on_hand[plant, sku_idx] = 50.0
+    rng = np.random.default_rng(seed=1)
+
+    no_orders_spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=0.0,
+        batch_size=1.0,
+        production_lead_time_days=3.0,
+        orders=[],
+        production_queue=ProductionQueue(),
+    )
+    advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[no_orders_spec],
+        current_day=0,
+        rng=rng,
+        distribution=tree,
+    )
+    # day 0: the plant's 50 units are pushed onto lane-dist toward
+    # cust-1; the 1-day lead time (deterministic, sigma=0) means they
+    # haven't landed yet.
+    assert state.finished_on_hand[plant, sku_idx] == 0.0
+    assert state.finished_on_hand[cust, sku_idx] == 0.0
+
+    order = CustomerOrder(customer_id="cust-1", order_day=1, quantity=10.0, priority=0)
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=0.0,
+        batch_size=1.0,
+        production_lead_time_days=3.0,
+        orders=[order],
+        production_queue=ProductionQueue(),
+    )
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[spec],
+        current_day=1,
+        rng=rng,
+        distribution=tree,
+    )
+
+    # day 1: the shipment lands at cust-1's own node, and the order due
+    # there is fulfilled against it directly -- not against the plant,
+    # which never sees this order at all.
+    sku_report = report.sku_reports[0]
+    assert sku_report.demand_met == 10.0
+    assert state.finished_on_hand[cust, sku_idx] == 40.0
+    assert state.finished_backlog[cust, sku_idx] == 0.0
+    assert state.finished_on_hand[plant, sku_idx] == 0.0
+
+
+def test_customer_absent_from_the_tree_falls_back_to_the_plant_directly() -> None:
+    network = _network()  # no customer-typed node at all
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    tree = build_distribution_tree(network, plant_node_id="plant-1")
+    plant = state.node_index("plant-1")
+    sku_idx = state.sku_index("sku-a")
+    state.finished_on_hand[plant, sku_idx] = 50.0
+    rng = np.random.default_rng(seed=1)
+
+    # cust-9's own node doesn't exist in this network at all, so it is
+    # absent from the tree's path_by_customer -- its order must fall
+    # back to the plant directly, exactly as every session before this
+    # one always did, rather than being dropped.
+    order = CustomerOrder(customer_id="cust-9", order_day=0, quantity=10.0, priority=0)
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=0.0,
+        batch_size=1.0,
+        production_lead_time_days=3.0,
+        orders=[order],
+        production_queue=ProductionQueue(),
+    )
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[spec],
+        current_day=0,
+        rng=rng,
+        distribution=tree,
+    )
+
+    assert report.sku_reports[0].demand_met == 10.0
+    assert state.finished_on_hand[plant, sku_idx] == 40.0

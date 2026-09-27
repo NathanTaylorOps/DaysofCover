@@ -96,6 +96,26 @@ module docstring) is now always read from
 the real per-shipment records, never from a separately maintained
 counter.
 
+Session 22's review also found the customer side of the network never
+existed as far as the engine was concerned: every order was fulfilled
+directly against the plant's own ``finished_on_hand``, whichever
+customer it was, with no lead time and no lane -- the schema's real
+distribution lanes (a DC fanning out to several customers, in the
+seeded Moreton Marine network) were decoration on the diagram, never
+read by this function. ``distribution``
+(:class:`daysofcover.engine.distribution.DistributionTree`, built once
+from the network's own lanes) is optional and defaults to ``None``,
+which is exactly the fallback above -- fulfil every order at the plant
+directly. When it is given, today's newly completed production is
+pushed one hop further down the tree at every node on it (see
+distribution.py's own module docstring for the push-not-pull design and
+why it runs before fulfillment), and each order is then fulfilled at
+whichever node its own customer id resolves to on the tree -- the plant
+itself for a customer with no node on the tree at all, so a network
+that only partly models its distribution side degrades gracefully
+rather than dropping those orders. Backlog now accumulates at whichever
+node actually held the shortfall, not always at the plant.
+
 Still deliberately out of scope: the per-customer backlog ledger
 mentioned above.
 """
@@ -114,6 +134,7 @@ from daysofcover.engine.allocation import (
     supplier_split_ratios,
 )
 from daysofcover.engine.disruption_state import DisruptionState
+from daysofcover.engine.distribution import DistributionTree, push_finished_goods
 from daysofcover.engine.production import (
     ProductionQueue,
     consume_components,
@@ -196,6 +217,7 @@ def advance_one_day(
     lane_by_supplier: dict[str, str] | None = None,
     primary_down_since_day: int | None = None,
     disruption_state: DisruptionState | None = None,
+    distribution: DistributionTree | None = None,
 ) -> DailyStepReport:
     """Advance one plant, across every SKU in ``sku_specs``, by one day.
 
@@ -235,6 +257,15 @@ def advance_one_day(
     fully-down plant skipping its own reorder decision, and
     severity-scaled production capacity for every SKU at this plant.
 
+    ``distribution`` is ``None`` by default, which fulfils every order
+    at the plant directly, exactly as every earlier session did. Given
+    a real :class:`daysofcover.engine.distribution.DistributionTree`,
+    today's production is pushed down it before any order is filled,
+    and each order is served at its own customer's node when the tree
+    knows one, the plant otherwise -- see the module docstring. When a
+    push needs to place a shipment, ``rng`` is required the same way
+    the reorder decision above requires it.
+
     See the module docstring for order of operations.
     """
     plant = state.node_index(plant_node_id)
@@ -262,35 +293,73 @@ def advance_one_day(
     if receive_lane_ids:
         state.on_hand[plant, component_idx] += components_received
 
-    # 1. every SKU's due production completes and today's customer
-    #    orders are allocated against what's on the shelf -- served by
-    #    ascending priority, then FIFO by order date -- before any new
-    #    production is decided. Backlog stays an aggregate per (node,
-    #    sku): see the module docstring for what that still can't do.
+    # 1. every SKU's due production completes; then, if a distribution
+    #    tree was given, today's newly-landed inventory is pushed one
+    #    hop further downstream at every node on the tree (see
+    #    distribution.py's module docstring for why this is push, not
+    #    pull, and why it happens before fulfillment, not after); then
+    #    today's customer orders are allocated against whatever is
+    #    actually on the shelf where that customer sits -- the plant
+    #    itself when distribution is None (every earlier session's
+    #    behaviour, unchanged) or that customer's own node when it
+    #    isn't and that node exists. Orders are served by ascending
+    #    priority, then FIFO by order date, exactly as before; backlog
+    #    is now tracked per (node, sku), not always at the plant --
+    #    still an aggregate per node, not per customer: see the module
+    #    docstring for what that still can't do.
     finished_goods_completed_by_sku: dict[str, float] = {}
-    demand_met_by_sku: dict[str, float] = {}
-    order_fulfillment_by_sku: dict[str, tuple[OrderFulfillment, ...]] = {}
     for spec in sku_specs:
         sku_idx = state.sku_index(spec.finished_sku_id)
         finished_goods_completed = spec.production_queue.complete(current_day=current_day)
         state.finished_on_hand[plant, sku_idx] += finished_goods_completed
-
-        available_finished = float(state.finished_on_hand[plant, sku_idx])
-        fulfilled = allocate_finished_goods_to_orders(
-            available_quantity=available_finished, orders=spec.orders
-        )
-        demand_realized = sum(order.quantity for order in spec.orders)
-        demand_met = sum(fulfilled)
-        unmet = demand_realized - demand_met
-        state.finished_on_hand[plant, sku_idx] -= demand_met
-        state.finished_backlog[plant, sku_idx] += unmet
-
         finished_goods_completed_by_sku[spec.finished_sku_id] = finished_goods_completed
-        demand_met_by_sku[spec.finished_sku_id] = demand_met
-        order_fulfillment_by_sku[spec.finished_sku_id] = tuple(
-            OrderFulfillment(order=order, fulfilled=quantity)
-            for order, quantity in zip(spec.orders, fulfilled, strict=True)
-        )
+
+    if distribution is not None:
+        for spec in sku_specs:
+            push_finished_goods(
+                state=state,
+                shipments=shipments,
+                tree=distribution,
+                sku_id=spec.finished_sku_id,
+                current_day=current_day,
+                rng=rng,
+                disruption_state=disruption_state,
+            )
+
+    def _fulfillment_node_id(customer_id: str) -> str:
+        if distribution is not None and customer_id in distribution.path_by_customer:
+            return customer_id
+        return plant_node_id
+
+    demand_met_by_sku: dict[str, float] = {}
+    order_fulfillment_by_sku: dict[str, tuple[OrderFulfillment, ...]] = {}
+    for spec in sku_specs:
+        sku_idx = state.sku_index(spec.finished_sku_id)
+        orders_by_node: dict[str, list[CustomerOrder]] = {}
+        for order in spec.orders:
+            orders_by_node.setdefault(_fulfillment_node_id(order.customer_id), []).append(order)
+
+        demand_met_total = 0.0
+        order_fulfillment_all: list[OrderFulfillment] = []
+        for node_id, node_orders in orders_by_node.items():
+            node_idx = state.node_index(node_id)
+            available_finished = float(state.finished_on_hand[node_idx, sku_idx])
+            fulfilled = allocate_finished_goods_to_orders(
+                available_quantity=available_finished, orders=node_orders
+            )
+            node_demand_met = sum(fulfilled)
+            node_unmet = sum(order.quantity for order in node_orders) - node_demand_met
+            state.finished_on_hand[node_idx, sku_idx] -= node_demand_met
+            state.finished_backlog[node_idx, sku_idx] += node_unmet
+
+            demand_met_total += node_demand_met
+            order_fulfillment_all.extend(
+                OrderFulfillment(order=order, fulfilled=quantity)
+                for order, quantity in zip(node_orders, fulfilled, strict=True)
+            )
+
+        demand_met_by_sku[spec.finished_sku_id] = demand_met_total
+        order_fulfillment_by_sku[spec.finished_sku_id] = tuple(order_fulfillment_all)
 
     # a fully or partially down plant produces at a scaled-down capacity
     # for every SKU, following the same linear-ramp shape ramp.py
