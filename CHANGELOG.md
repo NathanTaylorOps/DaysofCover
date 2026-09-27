@@ -23,6 +23,12 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - The plant's own periodic-review order-up-to reordering of a component, wired into the daily-step loop against the true on-hand-plus-on-order inventory position.
 - MOQ and per-lane weekly capacity caps on that reorder quantity, deferring an order to zero rather than placing a partial, sub-MOQ shipment.
 - A dual-sourced part's reorder split across every supplier's own lane, following the fixed split ratio or a contingent full switch to the backup, each supplier's share capped independently by its own lane.
+- A replication runner with entity-indexed common random numbers: independent, reproducible RNG substreams keyed by entity id and replication index, so the same entity draws the same numbers across two different scenario runs.
+- An MSER-5 warm-up truncation check, so a replication's early transient days can be discarded before averaging its output.
+- `tests/strategies.py` and a property-test tier (Hypothesis): composite strategies for schema-valid networks, part-supplier lists and id sets, checking invariants (allocation never exceeds request or availability, a capped order is always zero or at least the MOQ, a supplier split always accounts for the whole order, the state chassis is always sized from its network) across generated inputs, not just hand-picked examples.
+- Validation harnesses cross-checking the engine against two independent, external inventory/supply-chain libraries: `stockpyl` (case 3's (s, S) policy, against `stockpyl.ss.s_s_cost_discrete`'s own exact evaluation) and `SupplyNetPy` (a zero-lead-time (s, S) policy's service level, against classical continuous-review theory, across a genuinely different -- discrete-event, continuous-time -- simulator architecture).
+- A parametric synthetic network generator (`daysofcover.data.synthetic`) and a profiling script (`scripts/profile_engine.py`) measuring the daily-step engine's per-day wall-clock time on a network sized to the plan's ~40-node/25-part target, against its 200 ms target.
+- A generated `VALIDATION.md` (`scripts/generate_validation_report.py`), reproducing validation cases 1 to 6, 11, 12 and 13 with their actual numbers alongside each one's published reference and tolerance.
 
 ## [0.0.1] - 2026-09-26
 

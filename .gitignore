@@ -38,3 +38,5 @@ desktop.ini
 # Playwright
 test-results/
 playwright-report/
+
+simulation_trace.log
