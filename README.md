@@ -6,8 +6,6 @@ Days of Cover simulates a multi-tier supply network under disruption and answers
 
 This is the first commit. The engine, validation suite and hosted demo follow; each release tag carries a README that describes exactly what exists at that tag.
 
-Built with AI-assisted development.
-
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
