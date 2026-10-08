@@ -117,7 +117,6 @@
 </script>
 
 <svelte:head>
-  <title>Days of Cover | Scenario Comparison</title>
   <meta name="description" content="Illustrative deterministic single-component production disruption comparison." />
 </svelte:head>
 

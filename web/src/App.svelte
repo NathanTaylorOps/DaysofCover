@@ -178,7 +178,7 @@
 </script>
 
 <svelte:head>
-  <title>Days of Cover | Network Exposure</title>
+  <title>Days of Cover | {workspace === "exposure" ? "Network Exposure" : "Scenario Comparison"}</title>
   <meta name="description" content="Structural supply-chain dependency analysis of a synthetic manufacturing network." />
 </svelte:head>
 
@@ -219,7 +219,7 @@
             <div class="table-wrap"><table><thead><tr><th aria-sort={sortBy === "element" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("element")}>ELEMENT {sortBy === "element" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th>TYPE</th><th aria-sort={sortBy === "exposure" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("exposure")}>EXPOSURE {sortBy === "exposure" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th class="right" aria-sort={sortBy === "pairs" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("pairs")}>AFFECTED PAIRS {sortBy === "pairs" ? (sortDescending ? "↓" : "↑") : ""}</button></th></tr></thead><tbody>
               {#each filtered as row (`${row.element_type}:${row.element_id}`)}
                 <tr class:selected={selected?.element_id === row.element_id && selected?.element_type === row.element_type}>
-                  <td class="element"><button class="element-button" aria-pressed={selected?.element_id === row.element_id && selected?.element_type === row.element_type} onclick={() => selectRow(row)}>{row.element_id}</button>{#if elementLabel(row) !== row.element_id}<span class="element-label">{elementLabel(row)}</span>{/if}</td><td><span class="type">{row.element_type}</span></td>
+                  <td class="element"><button class="element-button" title={row.element_id} aria-pressed={selected?.element_id === row.element_id && selected?.element_type === row.element_type} onclick={() => selectRow(row)}>{row.element_id}</button>{#if elementLabel(row) !== row.element_id}<span class="element-label">{elementLabel(row)}</span>{/if}</td><td><span class="type">{row.element_type}</span></td>
                   <td><div class="exposure"><span class="bar-track"><span class="bar" style:width={percentage(row.convergence_fraction)}></span></span><span>{percentage(row.convergence_fraction)}</span></div></td>
                   <td class="right">{row.affected_customer_sku_pairs}</td>
                 </tr>
@@ -274,12 +274,35 @@
   .controls{display:flex;justify-content:space-between;gap:12px;padding:0 24px 20px}
   .tabs{display:flex;background:#f1f4f8;border-radius:6px;padding:3px}.tabs button{border:0;background:transparent;color:#65778b;padding:8px 13px;border-radius:5px;cursor:pointer;font-size:12px}.tabs button.active{background:#fff;color:#215e98;box-shadow:0 1px 4px #12243b1a;font-weight:700}
   input{border:1px solid #dce4ec;border-radius:6px;padding:9px 12px;min-width:0;width:205px;font-size:12px}
-  .table-wrap{overflow-x:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;color:#8a98a9;font-size:10px;letter-spacing:.8px;background:#f8fafc;padding:14px 23px;white-space:nowrap}td{padding:15px 23px;border-top:1px solid #edf0f4}tbody tr{cursor:default}tbody tr:hover,tbody tr.selected{background:#f0f6fc}.element{font-weight:700;color:#294d75;overflow-wrap:anywhere}.element-button{background:none;border:0;padding:4px 0;color:inherit;font-weight:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.element-label{display:block;color:#70849a;font-size:11px;font-weight:400;margin-top:4px;line-height:1.4}.clear-button{border:0;background:transparent;color:#215e98;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-weight:650;padding:4px}.clear-button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.detail-id{font-family:ui-monospace,monospace;font-size:11px!important;margin:0 0 12px!important;color:#73879d!important}.element-button:focus-visible,.sort-button:focus-visible,.tabs button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.sort-button{background:none;border:0;padding:0;color:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;cursor:pointer;text-align:inherit}.type{display:inline-block;text-transform:uppercase;font-size:10px;letter-spacing:.6px;background:#eaf0f6;color:#55718d;padding:5px 8px;border-radius:4px}.right{text-align:right}
+  .table-wrap{overflow-x:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;color:#8a98a9;font-size:10px;letter-spacing:.8px;background:#f8fafc;padding:14px 23px;white-space:nowrap}td{padding:15px 23px;border-top:1px solid #edf0f4}tbody tr{cursor:default}tbody tr:hover,tbody tr.selected{background:#f0f6fc}.element{font-weight:700;color:#294d75;min-width:210px;max-width:360px;overflow-wrap:normal}.element-button{overflow-wrap:anywhere;word-break:normal}.element-label{overflow-wrap:break-word}.element-button{background:none;border:0;padding:4px 0;color:inherit;font-weight:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.element-label{display:block;color:#70849a;font-size:11px;font-weight:400;margin-top:4px;line-height:1.4}.clear-button{border:0;background:transparent;color:#215e98;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-weight:650;padding:4px}.clear-button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.detail-id{font-family:ui-monospace,monospace;font-size:11px!important;margin:0 0 12px!important;color:#73879d!important}.element-button:focus-visible,.sort-button:focus-visible,.tabs button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.sort-button{background:none;border:0;padding:0;color:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;cursor:pointer;text-align:inherit}.type{display:inline-block;text-transform:uppercase;font-size:10px;letter-spacing:.6px;background:#eaf0f6;color:#55718d;padding:5px 8px;border-radius:4px}.right{text-align:right}
   .exposure{display:flex;gap:10px;align-items:center;min-width:150px}.exposure>span:last-child{min-width:43px;text-align:right;font-weight:650}.bar-track{height:7px;background:#e8edf3;border-radius:8px;flex:1;overflow:hidden}.bar{display:block;background:#3b82bc;height:100%;border-radius:8px}.empty{text-align:center;color:#7b8b9d;padding:32px}
   .detail{padding:25px;align-self:start}.detail h2{overflow-wrap:anywhere;margin:16px 0 12px;font-size:20px}.detail-stat{border-top:1px solid #e8edf3;margin-top:22px;padding-top:18px}.detail-stat span{display:block;font-size:11px;color:#78899b}.detail-stat strong{display:block;font-size:28px;margin-top:6px}.detail p{font-size:12px;color:#718399;line-height:1.8;margin-top:24px}
   .method{border-left:3px solid #397cb9;background:#eaf1f8;padding:18px 22px;margin-top:23px;border-radius:0 6px 6px 0}.method strong{font-size:12px}.method p{font-size:12px;color:#58718b;line-height:1.7;margin:8px 0 0}
   .message{padding:35px}.error{color:#a33232}.error button{padding:9px 18px;cursor:pointer}
   footer{font-size:11px;color:#8b9aab;padding:30px 0}
+  @media print {
+    :global(body){background:white!important;color:#17253a}
+    .shell{display:block;min-height:0}
+    .sidebar,.topbar,.controls,.clear-button{display:none!important}
+    .content{max-width:none;padding:0 12mm}
+    .analysis-layout{display:block}
+    .ranking,.detail,.metric{box-shadow:none;break-inside:avoid}
+    .detail{margin-top:12mm}
+    .table-wrap{overflow:visible}
+    table{table-layout:fixed;width:100%;font-size:10px}
+    th,td{padding:7px 9px}
+    th:first-child{width:40%}
+    th:nth-child(2){width:13%}
+    th:nth-child(3){width:27%}
+    th:nth-child(4){width:20%}
+    .element{min-width:0;max-width:none}
+    .element-button{overflow-wrap:anywhere;word-break:normal;text-decoration:none;font-size:10px}
+    .element-label{font-size:9px}
+    .exposure{min-width:0}
+    tr{break-inside:avoid}
+    thead{display:table-header-group}
+    footer{padding:12px 0}
+  }
   @media(max-width:1100px){.metrics{grid-template-columns:repeat(2,1fr)}.analysis-layout{grid-template-columns:1fr}.detail{display:block}}
   @media(max-width:700px){.shell{grid-template-columns:1fr}.sidebar{padding:15px;display:block}.brand{padding:0}.nav-label,.sidebar-note,.sidebar-bottom{display:none}nav{margin-top:14px;grid-template-columns:1fr 1fr}nav button{font-size:11px;padding:10px 8px}.topbar{height:50px;padding:0 18px}.content{padding:24px 16px}.heading{align-items:start;flex-direction:column}.metrics{gap:10px}.metric{padding:16px}.metric strong{font-size:23px}.controls{flex-direction:column}.panel-head{flex-wrap:wrap}.tabs{max-width:100%}input{width:100%}th,td{padding:12px}.mode-tag{font-size:9px}}
 </style>
