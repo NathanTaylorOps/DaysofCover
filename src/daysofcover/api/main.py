@@ -26,10 +26,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from daysofcover import __version__
+from daysofcover.cli import DEFAULT_EXAMPLE
+from daysofcover.io.loaders import load_network
+from daysofcover.lp.aggregate import solve_cover
+from daysofcover.lp.structure import structural_convergence
 
 if sys.platform != "win32":
     import resource
@@ -57,6 +61,40 @@ def health() -> dict[str, Any]:
         "hosted": True,
         "web_static_present": WEB_STATIC_DIR.is_dir(),
         "rss_mb": _rss_mb(),
+    }
+
+
+@app.get("/api/example/elements")
+def example_elements() -> dict[str, object]:
+    """List disruption targets in the bundled synthetic example."""
+    network = load_network(DEFAULT_EXAMPLE)
+    return {
+        "dataset": "Moreton Marine Systems (synthetic)",
+        "nodes": [{"id": node.id, "name": node.name} for node in network.nodes],
+        "lanes": [
+            {"id": lane.id, "origin_id": lane.origin_id, "destination_id": lane.destination_id}
+            for lane in network.lanes
+        ],
+    }
+
+
+@app.get("/api/example/structural-impact/{element_id}")
+def example_structural_impact(element_id: str) -> dict[str, object]:
+    """Run the structural dependency screen, not a stockout forecast."""
+    network = load_network(DEFAULT_EXAMPLE)
+    valid_ids = {node.id for node in network.nodes} | {lane.id for lane in network.lanes}
+    if element_id not in valid_ids:
+        raise HTTPException(status_code=404, detail="Unknown disruption element")
+    result = structural_convergence(network, removed_element_id=element_id)
+    return {
+        "dataset": "Moreton Marine Systems (synthetic)",
+        "element_id": element_id,
+        "analysis_type": "structural_dependency_screen",
+        "convergence_fraction": result.convergence_fraction,
+        "interpretation": (
+            "Structural dependency exposure only. This is not an inventory, "
+            "delivery-timing, financial-loss or time-to-stockout forecast."
+        ),
     }
 
 
