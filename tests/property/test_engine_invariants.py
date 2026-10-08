@@ -248,3 +248,35 @@ def test_batch_allocation_conserves_stock_and_is_order_independent(
         assert quantity >= 0
         assert quantity <= requested_by_sku[sku] + _TOLERANCE
         assert quantity % batch_by_sku[sku] == 0
+
+
+@given(
+    stock_tenths=st.integers(min_value=0, max_value=10000),
+    batch_tenths=st.integers(min_value=1, max_value=50),
+    requested_batches=st.integers(min_value=0, max_value=100),
+    rule=st.sampled_from(["backlog_proportion", "margin_priority"]),
+)
+@settings(deadline=None)
+def test_fractional_batch_allocation_never_overconsumes(
+    stock_tenths: int,
+    batch_tenths: int,
+    requested_batches: int,
+    rule: str,
+) -> None:
+    """Fractional production batches must never consume more physical stock."""
+    batch = batch_tenths / 10.0
+    available = stock_tenths / 10.0
+    requested = batch * requested_batches
+    allocation = allocate_batch_aware_components(
+        available_quantity=available,
+        requested_by_sku={"sku-a": requested, "sku-b": requested},
+        batch_component_by_sku={"sku-a": batch, "sku-b": batch},
+        backlog_by_sku={"sku-a": 1.0, "sku-b": 1.0},
+        margin_by_sku={"sku-a": 1.0, "sku-b": 1.0},
+        rule=rule,
+    )
+    assert sum(allocation.values()) <= available + _TOLERANCE
+    for quantity in allocation.values():
+        assert quantity >= 0
+        assert quantity <= requested + _TOLERANCE
+        assert abs(quantity / batch - round(quantity / batch)) < _TOLERANCE
