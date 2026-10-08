@@ -20,7 +20,6 @@ from daysofcover.models.network import Network, StrictModel
 from daysofcover.models.results import DailyOutcome, RunOutcome, ScenarioComparison
 from daysofcover.models.scenario import Disruption, Scenario
 
-
 MAX_BOUNDED_QUANTITY = 1_000_000_000.0
 
 
@@ -29,7 +28,9 @@ class BoundedScenarioInput(StrictModel):
     sku_id: str
     component_part_id: str
     initial_component_units: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
-    initial_finished_units: float = Field(default=0, ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
+    initial_finished_units: float = Field(
+        default=0, ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False
+    )
     daily_demand_units: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
     horizon_days: int = Field(ge=1, le=90)
     production_capacity_per_week: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
