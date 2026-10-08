@@ -1,14 +1,9 @@
 name: full
 
-# Runs on pull requests and on push to main. Deeper checks than `fast`:
-# the validation tier, coverage and a licenses manifest.
-#
-# Deliberately narrow for now: the plan's full job list also includes
-# Vitest, Playwright against the built wheel, a Docker image build and
-# GHCR push, an example-regeneration diff and a bundle-size check. Those
-# are added as the pieces they depend on land (the Dockerfile and web/
-# scaffold in a later Stage 0 session, the frontend in Stage 6) rather
-# than stubbed in now as jobs with nothing real to check.
+# Runs on pull requests and pushes to main. Includes frontend checks,
+# browser smoke tests, numerical validation, coverage reporting and licenses.
+# Coverage currently reports results without enforcing a minimum threshold;
+# release acceptance must establish a meaningful floor.
 
 on:
   pull_request:
