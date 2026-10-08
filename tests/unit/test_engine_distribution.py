@@ -516,7 +516,7 @@ def test_multiday_distribution_conserves_stock_across_nodes_and_transit() -> Non
     shipments = NetworkShipments.from_network(network)
     rng = np.random.default_rng(seed=7)
     tree = build_distribution_tree(network, plant_node_id="plant-1")
-     state.finished_on_hand[state.node_index("plant-1"), 0] = 90.0
+    state.finished_on_hand[state.node_index("plant-1"), 0] = 90.0
     state.finished_backlog[state.node_index("cust-a"), 0] = 60.0
     state.finished_backlog[state.node_index("cust-b"), 0] = 30.0
 
