@@ -25,9 +25,9 @@ from hypothesis import given, settings
 
 from daysofcover.engine.allocation import (
     CustomerOrder,
+    allocate_batch_aware_components,
     allocate_by_backlog_proportion,
     allocate_by_margin_priority,
-    allocate_batch_aware_components,
     allocate_finished_goods_to_orders,
     supplier_split_ratios,
 )
