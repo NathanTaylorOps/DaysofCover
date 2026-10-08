@@ -23,6 +23,7 @@
   let filter = $state<"all" | "node" | "lane">("all");
   let search = $state("");
   let selected = $state<ExposureRow | null>(null);
+  let requestController: AbortController | null = null;
   let sortBy = $state<"exposure" | "element" | "pairs">("exposure");
   let sortDescending = $state(true);
 
@@ -57,23 +58,55 @@
   }
 
   async function loadExposure() {
+    requestController?.abort();
+    const controller = new AbortController();
+    requestController = controller;
     loading = true;
     error = "";
     try {
-      const response = await fetch("/api/example/exposure");
+      const response = await fetch("/api/example/exposure", { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      report = (await response.json()) as ExposureReport;
-      selected = report.rows[0] ?? null;
+      const payload: unknown = await response.json();
+      if (!isExposureReport(payload)) throw new Error("Unexpected analysis response format");
+      report = payload;
+      selected = payload.rows[0] ?? null;
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
+      if (!controller.signal.aborted) {
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
     } finally {
-      loading = false;
+      if (requestController === controller) {
+        loading = false;
+        requestController = null;
+      }
     }
   }
 
   onMount(() => {
     void loadExposure();
+    return () => requestController?.abort();
   });
+
+  function isExposureReport(value: unknown): value is ExposureReport {
+    if (typeof value !== "object" || value === null) return false;
+    const item = value as Record<string, unknown>;
+    if (typeof item.dataset !== "string" || typeof item.synthetic !== "boolean" ||
+        typeof item.method !== "string" || typeof item.limitations !== "string" ||
+        typeof item.nodes !== "number" || typeof item.lanes !== "number" ||
+        !Array.isArray(item.rows)) return false;
+    return item.rows.every((row: unknown) => {
+      if (typeof row !== "object" || row === null) return false;
+      const entry = row as Record<string, unknown>;
+      return typeof entry.element_id === "string" &&
+        (entry.element_type === "node" || entry.element_type === "lane") &&
+        typeof entry.convergence_fraction === "number" &&
+        Number.isFinite(entry.convergence_fraction) &&
+        entry.convergence_fraction >= 0 && entry.convergence_fraction <= 1 &&
+        typeof entry.affected_customer_sku_pairs === "number" &&
+        Number.isInteger(entry.affected_customer_sku_pairs) &&
+        entry.affected_customer_sku_pairs >= 0;
+    });
+  }
 
   function percentage(value: number) {
     return `${(value * 100).toFixed(1)}%`;
@@ -109,13 +142,13 @@
           <div class="metric"><span>NETWORK</span><strong>{report.dataset}</strong><small>Synthetic reference case</small></div>
           <div class="metric"><span>NODES</span><strong>{report.nodes}</strong><small>Facilities and network points</small></div>
           <div class="metric"><span>TRANSPORT LANES</span><strong>{report.lanes}</strong><small>Directed connections</small></div>
-          <div class="metric"><span>HIGHEST EXPOSURE</span><strong>{percentage(report.rows[0]?.convergence_fraction ?? 0)}</strong><small>Structural value-weighted share</small></div>
+          <div class="metric"><span>HIGHEST EXPOSURE</span><strong>{report.rows.length ? percentage(Math.max(...report.rows.map((row) => row.convergence_fraction))) : "N/A"}</strong><small>Structural value-weighted share</small></div>
         </div>
         <div class="analysis-layout">
           <section class="panel ranking">
-            <div class="panel-head"><div><h2>Dependency ranking</h2><p>Sorted by value-weighted customer/SKU paths disconnected</p></div><span class="count">{filtered.length} ELEMENTS</span></div>
+            <div class="panel-head"><div><h2>Dependency ranking</h2><p>Structural exposure of customer/SKU paths. Select column headings to sort.</p></div><span class="count">{filtered.length} ELEMENTS</span></div>
             <div class="controls"><div class="tabs" role="group" aria-label="Element type"><button class:active={filter === "all"} onclick={() => filter = "all"}>All</button><button class:active={filter === "node"} onclick={() => filter = "node"}>Nodes</button><button class:active={filter === "lane"} onclick={() => filter = "lane"}>Lanes</button></div><input aria-label="Search network elements" placeholder="Search element ID…" bind:value={search} /></div>
-            <div class="table-wrap"><table><thead><tr><th><button class="sort-button" onclick={() => setSort("element")}>ELEMENT {sortBy === "element" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th>TYPE</th><th><button class="sort-button" onclick={() => setSort("exposure")}>EXPOSURE {sortBy === "exposure" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th class="right"><button class="sort-button" onclick={() => setSort("pairs")}>AFFECTED PAIRS {sortBy === "pairs" ? (sortDescending ? "↓" : "↑") : ""}</button></th></tr></thead><tbody>
+            <div class="table-wrap"><table><thead><tr><th aria-sort={sortBy === "element" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("element")}>ELEMENT {sortBy === "element" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th>TYPE</th><th aria-sort={sortBy === "exposure" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("exposure")}>EXPOSURE {sortBy === "exposure" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th class="right" aria-sort={sortBy === "pairs" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("pairs")}>AFFECTED PAIRS {sortBy === "pairs" ? (sortDescending ? "↓" : "↑") : ""}</button></th></tr></thead><tbody>
               {#each filtered as row (row.element_id)}
                 <tr class:selected={selected?.element_id === row.element_id}>
                   <td class="element"><button class="element-button" aria-pressed={selected?.element_id === row.element_id} onclick={() => selectRow(row)}>{row.element_id}</button></td><td><span class="type">{row.element_type}</span></td>
@@ -127,7 +160,7 @@
               {/each}
             </tbody></table></div>
           </section>
-          <aside class="panel detail"><div class="eyebrow">ELEMENT INSPECTOR</div>{#if selected}<h2>{selected.element_id}</h2><span class="type">{selected.element_type}</span><div class="detail-stat"><span>Structural exposure</span><strong>{percentage(selected.convergence_fraction)}</strong></div><div class="detail-stat"><span>Disconnected customer/SKU pairs</span><strong>{selected.affected_customer_sku_pairs}</strong></div><p>This screen tests whether qualified supply paths remain when the selected element is removed. It does not estimate when stock runs out.</p>{:else}<p>Select an element to inspect its dependency exposure.</p>{/if}</aside>
+          <aside class="panel detail" aria-live="polite"><div class="eyebrow">ELEMENT INSPECTOR</div>{#if selected}<h2>{selected.element_id}</h2><span class="type">{selected.element_type}</span><div class="detail-stat"><span>Structural exposure</span><strong>{percentage(selected.convergence_fraction)}</strong></div><div class="detail-stat"><span>Disconnected customer/SKU pairs</span><strong>{selected.affected_customer_sku_pairs}</strong></div><p>This screen tests whether qualified supply paths remain when the selected element is removed. It does not estimate when stock runs out.</p>{:else}<p>Select an element to inspect its dependency exposure.</p>{/if}</aside>
         </div>
         <section class="method"><strong>Methodology &amp; limitations</strong><p>{report.method}. {report.limitations} This is a synthetic example, not an assessment of an operating business.</p></section>
       {/if}
