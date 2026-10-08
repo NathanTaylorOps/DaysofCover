@@ -87,9 +87,7 @@ def example_simulation_request() -> SimulationRequest:
 def example_simulation() -> ScenarioComparison:
     """Run the bundled deterministic demonstration with illustrative assumptions."""
     result = bounded_simulation(example_simulation_request())
-    return result.model_copy(
-        update={"dataset": "Illustrative Assembly Plant", "synthetic": True}
-    )
+    return result.model_copy(update={"dataset": "Illustrative Assembly Plant", "synthetic": True})
 
 
 @app.post("/api/simulation/bounded", response_model=ScenarioComparison)
