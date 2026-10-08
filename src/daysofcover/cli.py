@@ -101,9 +101,9 @@ def cover(
     For each element: the AND/OR structural screen's convergence
     fraction ("structure says") next to the cover LP's own days-of-cover
     ("aggregate LP") -- the plan's own point being that these two
-    numbers often disagree, and the LP supplies a quantified approximation. For example, a 100%
-    structural chokepoint may be absorbed by existing inventory while
-    a less convergent single-source part can have very little cover. Sorted
+    numbers often disagree. The LP supplies a quantified approximation:
+    a structural chokepoint may be absorbed by inventory, while a less
+    convergent part may have little cover. Sorted
     by cover ascending: the shortest modelled aggregate-LP cover first.
     """
     target = path or DEFAULT_EXAMPLE
