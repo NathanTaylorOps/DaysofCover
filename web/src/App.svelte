@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import ScenarioComparison from "./ScenarioComparison.svelte";
+  let workspace = $state<"exposure" | "simulation">("exposure");
 
   type ExposureRow = {
     element_id: string;
@@ -184,14 +186,17 @@
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">DC</span><div><strong>DAYS OF COVER</strong><small>Supply-chain intelligence</small></div></div>
     <div class="nav-label">WORKSPACE</div>
-    <div class="nav-active">◈ &nbsp; Network exposure</div>
+    <nav aria-label="Analysis workspace"><button class:nav-active={workspace === "exposure"} aria-current={workspace === "exposure" ? "page" : undefined} onclick={() => workspace = "exposure"}>◈ &nbsp; Network exposure</button><button class:nav-active={workspace === "simulation"} aria-current={workspace === "simulation" ? "page" : undefined} onclick={() => workspace = "simulation"}>◈ &nbsp; Scenario comparison</button></nav>
     <div class="nav-label secondary">ANALYSIS STATUS</div>
-    <p class="sidebar-note">Structural dependency screening is available. Inventory coverage, simulation and mitigation optimisation are not connected to this dashboard.</p>
+    <p class="sidebar-note">Structural exposure and bounded scenario comparison are separate analyses. Full-network simulation and mitigation optimisation are not available.</p>
     <div class="sidebar-bottom">RESEARCH &amp; DECISION SUPPORT<br /><span>Technical demonstration</span></div>
   </aside>
 
   <main>
-    <header class="topbar"><span>ANALYTICS / NETWORK EXPOSURE</span><span class="status"><span class="status-dot"></span> Synthetic example</span></header>
+    <header class="topbar"><span>ANALYTICS / {workspace === "exposure" ? "NETWORK EXPOSURE" : "SCENARIO COMPARISON"}</span><span class="status"><span class="status-dot"></span> Synthetic example</span></header>
+    {#if workspace === "simulation"}
+      <ScenarioComparison />
+    {:else}
     <div class="content">
       <div class="heading"><div><div class="eyebrow">SUPPLY NETWORK ANALYSIS</div><h1>Structural exposure</h1><p>Identify nodes and transport lanes whose removal disconnects customer-product supply paths.</p></div><span class="mode-tag">READ-ONLY ANALYSIS</span></div>
 
@@ -229,6 +234,7 @@
       {/if}
       <footer>Days of Cover · Structural analysis preview · No operational data uploaded</footer>
     </div>
+    {/if}
   </main>
 </div>
 
@@ -245,6 +251,7 @@
   .brand strong{display:block;font-size:12px;letter-spacing:1.2px}.brand small{display:block;color:#94a8c2;font-size:11px;margin-top:5px}
   .nav-label{color:#8295af;font-size:10px;letter-spacing:1.5px;font-weight:750;padding:0 12px;margin-bottom:15px}
   .nav-label.secondary{margin-top:42px}
+  nav{display:grid;gap:5px}nav button{width:100%;text-align:left;background:transparent;border:0;color:#b0bfd1;padding:13px 12px;border-radius:7px;font:inherit;font-size:13px;cursor:pointer}nav button:focus-visible{outline:2px solid #83b7e9;outline-offset:2px}nav button:hover{background:#1c344f}
   .nav-active{background:#243c58;padding:13px 12px;border-radius:7px;font-size:13px;font-weight:650}
   .sidebar-note{color:#b0bfd1;font-size:12px;line-height:1.7;padding:0 12px}
   .sidebar-bottom{margin-top:auto;border-top:1px solid #2c4058;padding:22px 10px 0;font-size:10px;letter-spacing:1px;line-height:2;color:#a7b9cf}.sidebar-bottom span{color:#6d88a8}
@@ -274,5 +281,5 @@
   .message{padding:35px}.error{color:#a33232}.error button{padding:9px 18px;cursor:pointer}
   footer{font-size:11px;color:#8b9aab;padding:30px 0}
   @media(max-width:1100px){.metrics{grid-template-columns:repeat(2,1fr)}.analysis-layout{grid-template-columns:1fr}.detail{display:block}}
-  @media(max-width:700px){.shell{grid-template-columns:1fr}.sidebar{padding:15px;display:block}.brand{padding:0}.nav-label,.nav-active,.sidebar-note,.sidebar-bottom{display:none}.topbar{height:50px;padding:0 18px}.content{padding:24px 16px}.heading{align-items:start;flex-direction:column}.metrics{gap:10px}.metric{padding:16px}.metric strong{font-size:23px}.controls{flex-direction:column}.panel-head{flex-wrap:wrap}.tabs{max-width:100%}input{width:100%}th,td{padding:12px}.mode-tag{font-size:9px}}
+  @media(max-width:700px){.shell{grid-template-columns:1fr}.sidebar{padding:15px;display:block}.brand{padding:0}.nav-label,.sidebar-note,.sidebar-bottom{display:none}nav{margin-top:14px;grid-template-columns:1fr 1fr}nav button{font-size:11px;padding:10px 8px}.topbar{height:50px;padding:0 18px}.content{padding:24px 16px}.heading{align-items:start;flex-direction:column}.metrics{gap:10px}.metric{padding:16px}.metric strong{font-size:23px}.controls{flex-direction:column}.panel-head{flex-wrap:wrap}.tabs{max-width:100%}input{width:100%}th,td{padding:12px}.mode-tag{font-size:9px}}
 </style>
