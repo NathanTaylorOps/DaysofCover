@@ -1189,6 +1189,7 @@ def test_plant_recovers_capacity_after_two_day_shutdown() -> None:
 
 def test_batch_aware_allocation_is_independent_of_sku_input_order() -> None:
     """Equal-backlog allocation uses SKU IDs for deterministic ties."""
+
     def run(order: tuple[str, str]) -> tuple[dict[str, float], float]:
         network = _two_sku_network()
         state = NetworkState.from_network(network)
