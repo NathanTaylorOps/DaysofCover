@@ -1,9 +1,8 @@
 """Hosted preview API and static application entry point.
 
-The Docker image serves the Svelte technical preview and exposes a health
-endpoint. Scenario execution, bounded job processing and result reporting
-are not yet exposed as HTTP endpoints, even though modelling components
-exist in the Python package.
+The Docker image serves the Svelte technical preview, health endpoint,
+and a bounded synchronous single-plant scenario comparison API.
+General network simulation and background job processing are not exposed.
 
 ``/health`` is checked before any explicit route registration order
 matters here: FastAPI/Starlette matches an exact path before it falls
@@ -31,6 +30,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from daysofcover import __version__
+from daysofcover.engine.scenario_runner import BoundedScenarioInput, compare_bounded_scenario
+from daysofcover.models.results import ScenarioComparison
 from daysofcover.io.loaders import load_network
 from daysofcover.lp.structure import structural_convergence
 
@@ -63,6 +64,23 @@ class ExposureReport(BaseModel):
     nodes: int
     lanes: int
     rows: list[ExposureRow]
+
+
+@app.post("/api/example/simulation", response_model=ScenarioComparison)
+def example_simulation(config: BoundedScenarioInput) -> ScenarioComparison:
+    """Run a bounded inventory-aware plant disruption on the synthetic example.
+
+    The caller must provide stock, demand and capacity assumptions. The
+    example dataset does not supply calibrated initial inventory levels.
+    """
+    network = load_network(EXAMPLE_NETWORK)
+    try:
+        result = compare_bounded_scenario(network, config)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return result.model_copy(
+        update={"dataset": "Moreton Marine Systems", "synthetic": True}
+    )
 
 
 @app.get("/api/example/exposure", response_model=ExposureReport)
