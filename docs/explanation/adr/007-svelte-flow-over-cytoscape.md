@@ -7,8 +7,7 @@
 
 The network view (tiered supplier → plant → customer graph, with region
 highlighting and a culprit-highlight overlay during a scenario) needs a
-graph-rendering library. Cytoscape.js was the original placeholder choice,
-deferred to a "decide at Stage 7" note in earlier drafts. The front-end
+graph-rendering library. Cytoscape.js was also evaluated as an alternative graph renderer. The front-end
 stack is Svelte 5 with a hard SPA bundle-size budget of 300 KB gzipped JS
 total (echarts/core roughly 150-200 KB, the app itself roughly 50 KB),
 leaving a narrow allowance for a graph library plus a layout engine.
@@ -33,33 +32,28 @@ Reasoning:
   the region-highlight requirement (grouping nodes by geographic region as
   parent containers) without a custom grouping layer.
 - Measured bundle cost (Svelte Flow ~40 KB, dagre ~30 KB gzipped) fits
-  comfortably inside the 300 KB budget alongside ECharts, per the Stage 0
-  bundle spike referenced in the plan; Cytoscape.js alone risked consuming
-  the entire budget.
+  comfortably inside the 300 KB budget alongside ECharts, as an initial size estimate; final bundle sizes must be measured against
+  the built application.
 
 ## Consequences
 
-- The network view is built on `@xyflow/svelte` nodes/edges with a
+- The planned network view uses `@xyflow/svelte` nodes/edges with a
   `dagre`-computed tiered layout (suppliers → ports/hubs → plant →
   customers) recomputed when the network or highlight state changes.
-- Region highlighting uses Svelte Flow parent nodes rather than a custom
+- The proposed region-highlighting design uses Svelte Flow parent nodes rather than a custom
   bounding-box overlay.
 - Any future large-network view (the 100/200-node synthetic benchmark
   networks are for performance testing only, not for this view) would need
   its own layout strategy if Svelte Flow's default layout becomes
   visually unusable at that scale; this is out of scope for v1.
-- Package versions for Svelte, Svelte Flow and ECharts are pinned in
-  Stage 0 session 1 rather than left to float, since a layout or API
-  change in either library would ripple through the network view and the
-  bundle-size gate.
+- Dependency versions should be controlled and bundle-size and accessibility
+  requirements verified when the graph view is implemented.
 
 ## Alternatives considered
 
 - **Cytoscape.js.** More mature and graph-algorithm-rich, but no Svelte
   binding, no documented accessibility behaviour, and a real risk of
-  blowing the bundle budget on its own, which is what the earlier
-  "decide at Stage 7" deferral was ultimately resolved against once the
-  budget was fixed.
+  blowing the bundle budget on its own, and potentially higher integration and bundle-size costs.
 - **Hand-rolled SVG/Canvas graph view.** Full control and smallest
   possible bundle, but reimplements layout, panning/zooming, keyboard
   navigation and accessibility from nothing, none of which is the point of
