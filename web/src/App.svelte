@@ -23,6 +23,7 @@
   let catalog = $state<ElementCatalog | null>(null);
   let error = $state("");
   let loading = $state(true);
+  let metadataUnavailable = $state(false);
   let filter = $state<"all" | "node" | "lane">("all");
   let search = $state("");
   let selected = $state<ExposureRow | null>(null);
@@ -99,6 +100,7 @@
     requestController = controller;
     loading = true;
     error = "";
+    metadataUnavailable = false;
     try {
       const response = await fetch("/api/example/exposure", { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -112,13 +114,18 @@
         if (catalogResponse.ok) {
           const catalogPayload: unknown = await catalogResponse.json();
           if (isElementCatalog(catalogPayload)) catalog = catalogPayload;
-        }
+          else metadataUnavailable = true;
+        } else metadataUnavailable = true;
       } catch (catalogError) {
         if (controller.signal.aborted) throw catalogError;
+        metadataUnavailable = true;
         // Element IDs remain usable when the optional metadata request fails.
       }
     } catch (cause) {
       if (!controller.signal.aborted) {
+        report = null;
+        selected = null;
+        catalog = null;
         error = cause instanceof Error ? cause.message : String(cause);
       }
     } finally {
@@ -139,12 +146,13 @@
     const item = value as Record<string, unknown>;
     if (typeof item.dataset !== "string" || typeof item.synthetic !== "boolean" ||
         typeof item.method !== "string" || typeof item.limitations !== "string" ||
-        typeof item.nodes !== "number" || typeof item.lanes !== "number" ||
+        !Number.isInteger(item.nodes) || (item.nodes as number) < 0 ||
+        !Number.isInteger(item.lanes) || (item.lanes as number) < 0 ||
         !Array.isArray(item.rows)) return false;
     return item.rows.every((row: unknown) => {
       if (typeof row !== "object" || row === null) return false;
       const entry = row as Record<string, unknown>;
-      return typeof entry.element_id === "string" &&
+      return typeof entry.element_id === "string" && entry.element_id.length > 0 &&
         (entry.element_type === "node" || entry.element_type === "lane") &&
         typeof entry.convergence_fraction === "number" &&
         Number.isFinite(entry.convergence_fraction) &&
@@ -185,6 +193,7 @@
       {:else if error}
         <section class="panel message error" role="alert"><strong>Analysis unavailable</strong><p>Unable to load the example network: {error}</p><button onclick={loadExposure}>Retry</button></section>
       {:else if report}
+        {#if metadataUnavailable}<p class="metadata-notice" role="status">Element names are temporarily unavailable. Network IDs remain available for analysis.</p>{/if}
         <div class="metrics" aria-label="Network summary">
           <div class="metric"><span>NETWORK</span><strong>{report.dataset}</strong><small>Synthetic reference case</small></div>
           <div class="metric"><span>NODES</span><strong>{report.nodes}</strong><small>Facilities and network points</small></div>
@@ -220,6 +229,7 @@
   :global(*){box-sizing:border-box}
   :global(body){margin:0;background:#f4f6f9;color:#17253a;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
   :global(button),:global(input){font:inherit}
+  .metadata-notice{background:#fff8e9;border:1px solid #ead9b4;border-radius:7px;color:#705520;padding:12px 16px;margin:0 0 18px;font-size:12px;line-height:1.5}
   .shell{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh;min-width:0}
   .sidebar{background:#11233b;color:#fff;padding:28px 18px;display:flex;flex-direction:column}
   .brand{display:flex;gap:12px;align-items:center;padding:0 8px 42px}
