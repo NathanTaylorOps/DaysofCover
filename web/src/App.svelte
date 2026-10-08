@@ -1,7 +1,5 @@
 <script lang="ts">
-  // Stage 0 placeholder: proves the Docker image serves a real Svelte
-  // build with zero toolchain on the visitor's end. The actual UI (shell,
-  // board page, network view, ...) is Stage 6 -- see the build plan.
+  // Technical preview: the web interface does not yet expose the analysis engine.
   type Health = { version: string; status: string; [key: string]: unknown };
 
   let health = $state<Health | null>(null);
@@ -28,8 +26,8 @@
     supplier, port or route goes down, and what is the cheapest fix.
   </p>
   <p class="placeholder-note">
-    This is the Stage 0 placeholder page &mdash; it exists to prove the
-    Docker image serves a real build. The actual tool lands in Stage 6.
+    Technical preview: the modelling engine and command-line tools are in
+    development. Interactive disruption analysis is not yet available here.
   </p>
 
   <button onclick={checkHealth}>Check API health</button>
