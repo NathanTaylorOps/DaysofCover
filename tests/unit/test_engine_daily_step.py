@@ -1539,3 +1539,57 @@ def test_plant_recovery_ramp_preserves_component_and_wip_ledger() -> None:
         assert np.isclose(float(state.on_hand[plant, part]) + total_started, 100.0)
         assert np.isclose(queue.outstanding() + total_completed, total_started)
         assert np.isclose(float(state.finished_on_hand[plant, sku]), total_completed)
+
+
+def test_disrupted_replenishment_replays_identically_with_same_seed() -> None:
+    def replay() -> list[tuple[float, float, float, float]]:
+        network = _network()
+        state = NetworkState.from_network(network)
+        shipments = NetworkShipments.from_network(network)
+        rng = np.random.default_rng(seed=83)
+        queue = ProductionQueue()
+        disruption = Disruption(
+            element_id="lane-1", start_day=2, severity_fraction=1.0, duration_days=3
+        )
+        scenario = Scenario(id="replay", name="Replay", disruptions=[disruption], seed=83)
+        outage = DisruptionState.from_scenario(scenario, network=network)
+        plant = state.node_index("plant-1")
+        part = state.part_index("part-a")
+        trace = []
+        for day in range(9):
+            spec = SkuProductionSpec(
+                finished_sku_id="sku-a",
+                bom=[BOMLine(part_id="part-a", quantity=1.0)],
+                capacity_per_week=70.0,
+                batch_size=1.0,
+                production_lead_time_days=2.0,
+                orders=[],
+                production_queue=queue,
+            )
+            report = advance_one_day(
+                state=state,
+                shipments=shipments,
+                plant_node_id="plant-1",
+                component_part_id="part-a",
+                inbound_lane_id="lane-1",
+                sku_specs=[spec],
+                current_day=day,
+                order_up_to=30.0,
+                review_period_days=1,
+                rng=rng,
+                disruption_state=outage,
+            )
+            trace.append(
+                (
+                    report.components_received,
+                    report.component_ordered,
+                    report.sku_reports[0].production_started,
+                    float(state.on_hand[plant, part]),
+                )
+            )
+        return trace
+
+    first = replay()
+    assert first == replay()
+    assert any(day[1] > 0.0 for day in first)
+    assert any(day[0] > 0.0 for day in first)
