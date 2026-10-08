@@ -1,20 +1,10 @@
-"""A parametric, seeded synthetic network generator, for profiling only.
+"""Generate reproducible synthetic networks for performance profiling.
 
-The shipped Moreton Marine example (:mod:`daysofcover.data.generate`) is
-hand-authored and fixed at 31 nodes -- right for an example a person
-reads, wrong for the build plan's profiling target of "about 40 nodes,
-25 parts", which needs the node and part counts to be a knob, not a
-fixed topology. This module is that knob: a simple, seeded generator
-that produces a schema-valid network at whatever size
-:mod:`scripts.profile_engine` asks for, structured as one plant, one
-supplier per part, and the remaining requested node count padded out as
-an unreferenced distribution tier -- exactly the kind of node the real
-schema already allows to exist without anything routing through it.
-
-Not an example anyone would read for its business meaning -- ids are
-plain ``f"{prefix}-{n}"`` strings, not a fictional company's -- and not
-validated against any reference numbers; the profiling script is its
-only consumer.
+The configurable network contains a plant, one supplier per part and
+additional distribution-tier nodes as needed to meet the requested size.
+The topology is deliberately simple and is not intended as a realistic
+business case. The generator supports repeatable workload sizing for
+engine profiling rather than business interpretation or validation.
 """
 
 from __future__ import annotations
