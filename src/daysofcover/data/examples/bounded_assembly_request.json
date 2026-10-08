@@ -52,10 +52,10 @@
     "initial_component_units": 200,
     "initial_finished_units": 5,
     "daily_demand_units": 5,
-    "horizon_days": 14,
+    "horizon_days": 7,
     "production_capacity_per_week": 70,
-    "disruption_start_day": 1,
-    "disruption_duration_days": 10,
+    "disruption_start_day": 0,
+    "disruption_duration_days": 7,
     "disruption_severity_fraction": 1,
     "seed": 42
   }
