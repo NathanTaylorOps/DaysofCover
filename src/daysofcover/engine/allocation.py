@@ -1,25 +1,14 @@
-"""The allocation and split rules, three of the build plan's own bullets.
+"""Allocation policies for constrained components, finished goods and sourcing.
 
-Each rule below is one line of the build plan, kept as its own small,
-independently testable function rather than folded into the daily-step
-loop, since each is a self-contained decision the loop will call into
-once it needs to make it:
+Shared components can be allocated to SKUs in proportion to backlog or
+according to margin priority. Scarce finished goods can be assigned to
+customer orders using FIFO with a priority override. Dual-source
+replenishment supports fixed allocation ratios and a contingent switch
+to the backup supplier after the configured detection delay.
 
-- "A scarce shared part is allocated across SKUs in proportion to
-  backlog, with margin priority as an option" --
-  :func:`allocate_by_backlog_proportion` and
-  :func:`allocate_by_margin_priority`.
-- "Scarce finished goods are allocated across customers FIFO by order
-  date, with a priority override" -- :func:`allocate_finished_goods_to_orders`.
-- "Dual-sourced parts follow a fixed split; a contingent full switch to
-  the backup happens detect_delay_days after the primary is known
-  down" -- :func:`supplier_split_ratios`.
-
-None of these decide *when* a part is scarce, *when* a primary is known
-down, or *how* the daily-step loop calls them -- that wiring, and the
-multi-SKU, multi-customer state it would need, is still ahead. Each
-function here answers one allocation question in isolation, given
-whatever the caller has already decided about the situation.
+These functions implement independent allocation decisions. The daily-step
+engine supplies current demand, inventory and disruption context and
+coordinates their execution.
 """
 
 from __future__ import annotations
