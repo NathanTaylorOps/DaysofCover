@@ -156,7 +156,7 @@ test("runs an illustrative bounded simulation without disturbing exposure", asyn
   await page.goto("/");
   await page.getByRole("button", { name: /Scenario comparison/ }).click();
   await expect(page.getByRole("heading", { name: "Scenario comparison" })).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "Baseline production capacity is below demand" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Nominal weekly production capacity meets or exceeds demand" })).toBeVisible();
   await page.getByRole("button", { name: "Run comparison" }).click();
   await expect(page.getByRole("region", { name: "Scenario results" })).toContainText("-10 units");
   await expect(page.getByRole("heading", { name: "Daily fulfilment comparison" })).toBeVisible();
