@@ -109,3 +109,39 @@ def test_bounded_request_size_limit() -> None:
 
 def test_request_size_limit_is_endpoint_specific() -> None:
     assert client.post("/api/example/simulation").status_code == 200
+
+
+def test_demo_request_round_trip_matches_demo_result() -> None:
+    request = client.get("/api/example/simulation/request")
+    assert request.status_code == 200
+    demo = client.post("/api/example/simulation")
+    supplied = client.post("/api/simulation/bounded", json=request.json())
+    assert demo.status_code == supplied.status_code == 200
+    demo_body = demo.json()
+    supplied_body = supplied.json()
+    assert demo_body["synthetic"] is True
+    assert supplied_body["synthetic"] is False
+    assert demo_body["baseline"] == supplied_body["baseline"]
+    assert demo_body["disrupted"] == supplied_body["disrupted"]
+    assert demo_body["fulfillment_delta_units"] == supplied_body["fulfillment_delta_units"]
+
+
+def test_bounded_endpoint_rejects_extreme_finite_inputs() -> None:
+    for field in (
+        "initial_component_units",
+        "initial_finished_units",
+        "daily_demand_units",
+        "production_capacity_per_week",
+    ):
+        payload = valid_request()
+        config = payload["config"]
+        assert isinstance(config, dict)
+        config[field] = 1e308
+        response = client.post("/api/simulation/bounded", json=payload)
+        assert response.status_code == 422, (field, response.text)
+
+
+def test_health_is_not_shadowed_by_static_mount() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
