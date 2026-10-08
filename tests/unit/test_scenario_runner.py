@@ -4,16 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from daysofcover.engine.scenario_runner import BoundedScenarioInput, compare_bounded_scenario
-from daysofcover.models.network import Network
+from daysofcover.models.network import Network, NodeType
 
 
 def example_network() -> Network:
     return Network.model_validate(
         {
             "base_currency": "AUD",
-            "nodes": [
-                {"id": "plant", "name": "Plant", "type": "plant", "region": "AU"}
-            ],
+            "nodes": [{"id": "plant", "name": "Plant", "type": NodeType.PLANT, "region": "AU"}],
             "lanes": [],
             "parts": [
                 {
