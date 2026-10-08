@@ -1324,3 +1324,129 @@ def test_shared_component_request_respects_other_component_batch_limit() -> None
     assert [item.production_started for item in report.sku_reports] == [3.0, 9.0]
     assert state.on_hand[plant, shared] == 0.0
     assert state.on_hand[plant, other] == 1.0
+
+
+def test_multiday_component_and_finished_goods_conservation() -> None:
+    """Independent stock-flow ledger across shipment arrival, WIP and fulfilment."""
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    queue = ProductionQueue()
+    rng = np.random.default_rng(seed=17)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    sku = state.sku_index("sku-a")
+    shipments.ship(lane_id="lane-1", part_id="part-a", quantity=35.0, order_day=0, rng=rng)
+
+    cumulative_received = 0.0
+    cumulative_started = 0.0
+    cumulative_completed = 0.0
+    cumulative_demand = 0.0
+    cumulative_met = 0.0
+    for day in range(12):
+        quantity = float((day % 3) + 2)
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id="lane-1",
+            sku_specs=[
+                SkuProductionSpec(
+                    finished_sku_id="sku-a",
+                    bom=[BOMLine(part_id="part-a", quantity=1.0)],
+                    capacity_per_week=7_000.0,
+                    batch_size=1.0,
+                    production_lead_time_days=3.0,
+                    orders=[
+                        CustomerOrder(
+                            customer_id="cust-1", order_day=day, quantity=quantity, priority=0
+                        )
+                    ],
+                    production_queue=queue,
+                )
+            ],
+            current_day=day,
+        )
+        entry = report.sku_reports[0]
+        cumulative_received += report.components_received
+        cumulative_started += entry.production_started
+        cumulative_completed += entry.finished_goods_completed
+        cumulative_demand += entry.demand_realized
+        cumulative_met += entry.demand_met
+
+        assert np.isclose(
+            float(state.on_hand[plant, part]) + cumulative_started,
+            cumulative_received,
+        )
+        assert np.isclose(queue.outstanding() + cumulative_completed, cumulative_started)
+        assert np.isclose(
+            float(state.finished_on_hand[plant, sku]) + cumulative_met,
+            cumulative_completed,
+        )
+        assert np.isclose(
+            float(state.finished_backlog[plant, sku]),
+            cumulative_demand - cumulative_met,
+        )
+        assert np.all(state.on_hand >= -1e-8)
+        assert np.all(state.finished_on_hand >= -1e-8)
+
+
+def test_multiday_shared_component_ledger_with_competing_skus() -> None:
+    """Shared stock is consumed once, even across days and different allocation rules."""
+    network = _two_sku_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    state.on_hand[plant, part] = 101.0
+    queues = {"sku-a": ProductionQueue(), "sku-b": ProductionQueue()}
+    total_started = 0.0
+    total_completed = 0.0
+    total_met = 0.0
+    total_demand = 0.0
+
+    for day in range(8):
+        specs = [
+            SkuProductionSpec(
+                finished_sku_id=sku_id,
+                bom=[BOMLine(part_id="part-a", quantity=1.0)],
+                capacity_per_week=70.0,
+                batch_size=1.0,
+                production_lead_time_days=2.0,
+                orders=[
+                    CustomerOrder(
+                        customer_id=f"customer-{sku_id}",
+                        order_day=day,
+                        quantity=4.0 + (day % 2),
+                        priority=0,
+                    )
+                ],
+                production_queue=queues[sku_id],
+                margin_fraction=0.6 if sku_id == "sku-a" else 0.2,
+            )
+            for sku_id in ("sku-a", "sku-b")
+        ]
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id=None,
+            sku_specs=specs,
+            current_day=day,
+            allocation_rule="margin_priority" if day % 2 else "backlog_proportion",
+        )
+        total_started += sum(item.production_started for item in report.sku_reports)
+        total_completed += sum(item.finished_goods_completed for item in report.sku_reports)
+        total_met += sum(item.demand_met for item in report.sku_reports)
+        total_demand += sum(item.demand_realized for item in report.sku_reports)
+        assert np.isclose(float(state.on_hand[plant, part]) + total_started, 101.0)
+        assert np.isclose(
+            sum(queue.outstanding() for queue in queues.values()) + total_completed,
+            total_started,
+        )
+        assert np.isclose(float(state.finished_on_hand[plant].sum()) + total_met, total_completed)
+        assert np.isclose(float(state.finished_backlog[plant].sum()) + total_met, total_demand)
+        assert np.all(state.on_hand >= -1e-8)
+        assert np.all(state.finished_on_hand >= -1e-8)
