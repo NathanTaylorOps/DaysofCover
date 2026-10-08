@@ -181,15 +181,15 @@ def test_scenario_comparison_daily_ledgers_reconcile(
         for day in run.daily:
             cumulative_demand += day.demand_units
             cumulative_fulfilled += day.fulfilled_units
-            assert 0.0 <= day.fulfilled_units <= cumulative_demand - (
-                cumulative_fulfilled - day.fulfilled_units
-            ) + 1e-7
+            assert (
+                0.0
+                <= day.fulfilled_units
+                <= cumulative_demand - (cumulative_fulfilled - day.fulfilled_units) + 1e-7
+            )
             assert day.backlog_units == pytest.approx(cumulative_demand - cumulative_fulfilled)
             assert day.backlog_units >= -1e-7
         expected_service = (
-            run.total_fulfilled_units / run.total_demand_units
-            if run.total_demand_units
-            else 1.0
+            run.total_fulfilled_units / run.total_demand_units if run.total_demand_units else 1.0
         )
         assert run.service_fraction == pytest.approx(expected_service)
         assert 0.0 <= run.service_fraction <= 1.0
