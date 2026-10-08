@@ -518,6 +518,8 @@ def solve_impact(
     built); this function only solves the LP for whatever ``T`` it is
     given, fixed.
     """
+    if not math.isfinite(horizon_days) or horizon_days < 0:
+        raise ValueError("horizon_days must be a finite, non-negative number")
     resolved = _resolve(network, removed_element_id=removed_element_id)
     builder, columns = _build(resolved, starting_inventory=starting_inventory, t_fixed=horizon_days)
     objective = {
@@ -592,6 +594,8 @@ def solve_buffer(
     the solver actually used (a positive ``delta_r``); every other pair
     that got a free column needed none.
     """
+    if not math.isfinite(horizon_days) or horizon_days < 0:
+        raise ValueError("horizon_days must be a finite, non-negative number")
     resolved = _resolve(network, removed_element_id=removed_element_id)
     builder, columns = _build(
         resolved, starting_inventory=starting_inventory, t_fixed=horizon_days, buffer=True
