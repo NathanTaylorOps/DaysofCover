@@ -1,11 +1,8 @@
 """Schema v0: the result envelope.
 
-The engine (Stage 1) is what actually populates ``summary`` and the
-per-replication series; this is the container schema so the API (Stage 5)
-and the front end (Stage 6) have a stable contract to build against before
-the engine exists. Every field the methodology document defines a metric
-for gets added here as that metric is implemented, rather than stubbed with
-placeholder numbers now.
+A minimal result envelope reserved for future end-to-end scenario orchestration.
+The engine and LP components exist, but this schema is not yet a complete
+contract for scenario execution, reporting or the web interface.
 """
 
 from __future__ import annotations
@@ -14,11 +11,10 @@ from daysofcover.models.network import StrictModel
 
 
 class ResultSummary(StrictModel):
-    """Placeholder for the per-scenario scalar summary row.
+    """Minimal scenario summary identifier and replication count.
 
-    Populated from Stage 3 onward (metrics with bands and half-widths).
-    Intentionally near-empty in schema v0: a metrics table guessed at now
-    would just be rewritten once docs/explanation/METHODOLOGY.md exists.
+    Detailed metrics and uncertainty intervals are not yet defined in this
+    public result contract.
     """
 
     scenario_id: str
