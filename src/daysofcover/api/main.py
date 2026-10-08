@@ -79,6 +79,7 @@ async def limit_bounded_request_size(request: Request, call_next: Any) -> Any:
     request._body = b"".join(chunks)
     return await call_next(request)
 
+
 BOUNDED_DEMO_REQUEST = (
     Path(__file__).resolve().parent.parent / "data" / "examples" / "bounded_assembly_request.json"
 )
