@@ -27,13 +27,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from daysofcover import __version__
 from daysofcover.io.loaders import load_network
 from daysofcover.lp.structure import structural_convergence
-from fastapi.staticfiles import StaticFiles
-
-from daysofcover import __version__
 
 if sys.platform != "win32":
     import resource
