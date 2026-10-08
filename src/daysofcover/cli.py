@@ -100,11 +100,11 @@ def cover(
 
     For each element: the AND/OR structural screen's convergence
     fraction ("structure says") next to the cover LP's own days-of-cover
-    ("aggregate LP") -- the plan's own point being that these two
-    numbers often disagree. The LP supplies a quantified approximation:
-    a structural chokepoint may be absorbed by inventory, while a less
-    convergent part may have little cover. Sorted
-    by cover ascending: the shortest modelled aggregate-LP cover first.
+    ("LP cover") -- the analytical distinction being that these two
+    numbers can disagree because structural reachability ignores stock and
+    capacity. LP cover is an approximation conditional on starting inventory
+    and other assumptions, not a day-by-day simulation. Results are sorted
+    by finite LP-estimated cover ascending.
     """
     target = path or DEFAULT_EXAMPLE
     try:
@@ -144,7 +144,7 @@ def cover(
         return (0, cover_days)
 
     rows.sort(key=_sort_key)
-    typer.echo(f"{'element':<24}{'structure says':>18}{'aggregate LP':>20}")
+    typer.echo(f"{'element':<24}{'structure says':>18}{'LP cover':>20}")
     for element_id, convergence_fraction, cover_days in rows:
         if math.isnan(cover_days):
             cover_text = "error"
