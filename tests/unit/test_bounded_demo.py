@@ -56,6 +56,10 @@ def test_daily_invariants(changes: dict[str, float | int]) -> None:
         assert 0 <= run.service_fraction <= 1
         assert all(0 <= d.fulfilled_units <= d.demand_units for d in run.daily)
         assert all(d.backlog_units >= 0 for d in run.daily)
+        cumulative_unserved = 0.0
+        for day in run.daily:
+            cumulative_unserved += day.demand_units - day.fulfilled_units
+            assert day.backlog_units == pytest.approx(cumulative_unserved)
         assert run.service_fraction == pytest.approx(
             run.total_fulfilled_units / run.total_demand_units if run.total_demand_units else 1.0
         )
@@ -79,3 +83,34 @@ def test_nonfinite_inputs_rejected() -> None:
         BoundedScenarioInput.model_validate(
             {**config.model_dump(), "daily_demand_units": float("inf")}
         )
+
+
+def test_initial_finished_stock_serves_first_day_without_production() -> None:
+    network, config = demo()
+    result = compare_bounded_scenario(
+        network,
+        config.model_copy(
+            update={
+                "initial_finished_units": 3.0,
+                "initial_component_units": 0.0,
+                "production_capacity_per_week": 0.0,
+            }
+        ),
+    )
+    for run in (result.baseline, result.disrupted):
+        assert run.daily[0].fulfilled_units == pytest.approx(3.0)
+        assert run.daily[0].backlog_units == pytest.approx(2.0)
+        assert run.daily[1].fulfilled_units == pytest.approx(0.0)
+        assert run.daily[1].backlog_units == pytest.approx(7.0)
+
+
+def test_partial_disruption_never_improves_fulfilment() -> None:
+    network, config = demo()
+    result = compare_bounded_scenario(
+        network,
+        config.model_copy(update={"disruption_severity_fraction": 0.5}),
+    )
+    assert result.disrupted.total_fulfilled_units <= result.baseline.total_fulfilled_units
+    assert result.fulfillment_delta_units == pytest.approx(
+        result.disrupted.total_fulfilled_units - result.baseline.total_fulfilled_units
+    )
