@@ -33,9 +33,9 @@ from pydantic import BaseModel, ValidationError
 from daysofcover import __version__
 from daysofcover.engine.scenario_runner import BoundedScenarioInput, compare_bounded_scenario
 from daysofcover.io.loaders import load_network
+from daysofcover.lp.structure import structural_convergence
 from daysofcover.models.network import Network, StrictModel
 from daysofcover.models.results import ScenarioComparison
-from daysofcover.lp.structure import structural_convergence
 
 if sys.platform != "win32":
     import resource
