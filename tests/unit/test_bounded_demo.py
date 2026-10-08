@@ -40,7 +40,7 @@ def test_bundled_example_runs_over_http_and_is_reproducible() -> None:
     [
         {"daily_demand_units": 0.0},
         {"production_capacity_per_week": 0.0},
-        {"disruption_start_day": 13, "disruption_duration_days": 1.0},
+        {"disruption_start_day": 6, "disruption_duration_days": 1.0},
         {"disruption_severity_fraction": 0.5},
         {"disruption_duration_days": 1.0},
         {"initial_finished_units": 100.0},
@@ -48,7 +48,9 @@ def test_bundled_example_runs_over_http_and_is_reproducible() -> None:
 )
 def test_daily_invariants(changes: dict[str, float | int]) -> None:
     network, config = demo()
-    result = compare_bounded_scenario(network, config.model_copy(update=changes))
+    result = compare_bounded_scenario(
+        network, BoundedScenarioInput.model_validate({**config.model_dump(), **changes})
+    )
     for run in (result.baseline, result.disrupted):
         assert len(run.daily) == config.horizon_days
         assert run.total_demand_units == pytest.approx(sum(d.demand_units for d in run.daily))
@@ -114,3 +116,26 @@ def test_partial_disruption_never_improves_fulfilment() -> None:
     assert result.fulfillment_delta_units == pytest.approx(
         result.disrupted.total_fulfilled_units - result.baseline.total_fulfilled_units
     )
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "initial_component_units",
+        "initial_finished_units",
+        "daily_demand_units",
+        "production_capacity_per_week",
+    ],
+)
+def test_extreme_quantities_rejected(field: str) -> None:
+    _, config = demo()
+    with pytest.raises(ValidationError):
+        BoundedScenarioInput.model_validate({**config.model_dump(), field: 1e308})
+
+
+def test_disruption_duration_bounded() -> None:
+    _, config = demo()
+    with pytest.raises(ValidationError):
+        BoundedScenarioInput.model_validate(
+            {**config.model_dump(), "disruption_duration_days": 1e308}
+        )
