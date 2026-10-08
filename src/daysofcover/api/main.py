@@ -26,7 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
@@ -45,6 +46,39 @@ else:  # pragma: no cover - exercised on the Windows dev machine only
 WEB_STATIC_DIR = Path(__file__).resolve().parent.parent / "web_static"
 
 app = FastAPI(title="daysofcover", version=__version__)
+
+MAX_BOUNDED_REQUEST_BYTES = 256 * 1024
+
+
+@app.middleware("http")
+async def limit_bounded_request_size(request: Request, call_next: Any) -> Any:
+    """Reject oversized bounded submissions before JSON parsing and validation."""
+    if request.method != "POST" or request.url.path != "/api/simulation/bounded":
+        return await call_next(request)
+
+    too_large = JSONResponse(
+        status_code=413,
+        content={"detail": "Bounded simulation request exceeds 256 KiB"},
+    )
+    length = request.headers.get("content-length")
+    if length is not None:
+        try:
+            if int(length) > MAX_BOUNDED_REQUEST_BYTES:
+                return too_large
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+
+    received = 0
+    chunks: list[bytes] = []
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > MAX_BOUNDED_REQUEST_BYTES:
+            return too_large
+        chunks.append(chunk)
+
+    request._body = b"".join(chunks)
+    return await call_next(request)
+
 
 BOUNDED_DEMO_REQUEST = (
     Path(__file__).resolve().parent.parent / "data" / "examples" / "bounded_assembly_request.json"

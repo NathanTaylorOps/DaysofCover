@@ -35,8 +35,11 @@ processed by this bounded runner.
   not as a general-purpose multi-tenant simulation service. No guaranteed
   latency/SLA is established. Production hosting must impose reverse-proxy
   request-body size limits, rate limits and timeouts before public arbitrary
-  network submissions are enabled. The network schema bounds graph size, but
-  this endpoint does not yet enforce a standalone HTTP payload byte cap.
+  network submissions are enabled. The network schema bounds graph size.
+  The bounded POST endpoint enforces a **256 KiB request-body limit** and
+  returns HTTP **413** for oversized submissions, including streamed bodies.
+  This application-level cap does not replace proxy-level limits or rate
+  limiting; no explicit CPU-time budget or concurrency queue is enforced.
 
 The response contract is preserved for frontend integration. The demo
 `synthetic=true` and `dataset` fields are explicit so its results cannot
