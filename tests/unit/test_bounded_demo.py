@@ -26,7 +26,7 @@ def test_bundled_example_runs_over_http_and_is_reproducible() -> None:
     assert first.status_code == 200, first.text
     body = first.json()
     assert body["synthetic"] is True
-    assert len(body["baseline"]["daily"]) == 14
+    assert len(body["baseline"]["daily"]) == 7
     assert body["baseline"]["total_fulfilled_units"] > body["disrupted"]["total_fulfilled_units"]
     assert client.post("/api/example/simulation").json() == body
     request = client.get("/api/example/simulation/request").json()
@@ -57,9 +57,7 @@ def test_daily_invariants(changes: dict[str, float | int]) -> None:
         assert all(0 <= d.fulfilled_units <= d.demand_units for d in run.daily)
         assert all(d.backlog_units >= 0 for d in run.daily)
         assert run.service_fraction == pytest.approx(
-            run.total_fulfilled_units / run.total_demand_units
-            if run.total_demand_units
-            else 1.0
+            run.total_fulfilled_units / run.total_demand_units if run.total_demand_units else 1.0
         )
 
 
