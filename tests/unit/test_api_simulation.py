@@ -145,3 +145,24 @@ def test_health_is_not_shadowed_by_static_mount() -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_bounded_endpoint_requires_json_media_type() -> None:
+    import json
+
+    payload = json.dumps(valid_request())
+    for content_type in ("text/plain", "application/x-www-form-urlencoded"):
+        response = client.post(
+            "/api/simulation/bounded",
+            content=payload,
+            headers={"content-type": content_type},
+        )
+        assert response.status_code == 415
+        assert response.json()["detail"] == "Content-Type must be application/json"
+
+    response = client.post(
+        "/api/simulation/bounded",
+        content=payload,
+        headers={"content-type": "application/json; charset=utf-8"},
+    )
+    assert response.status_code == 200
