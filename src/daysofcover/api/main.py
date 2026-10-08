@@ -44,11 +44,7 @@ WEB_STATIC_DIR = Path(__file__).resolve().parent.parent / "web_static"
 app = FastAPI(title="daysofcover", version=__version__)
 
 EXAMPLE_NETWORK = (
-    Path(__file__).resolve().parent.parent
-    / "data"
-    / "examples"
-    / "moreton_marine"
-    / "network.json"
+    Path(__file__).resolve().parent.parent / "data" / "examples" / "moreton_marine" / "network.json"
 )
 
 
