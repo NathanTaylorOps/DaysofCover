@@ -148,8 +148,10 @@ test("runs an illustrative bounded simulation without disturbing exposure", asyn
     posted = route.request().postDataJSON();
     await route.fulfill({ json: {
       dataset: "User-supplied network", synthetic: false, element_id: "demo_plant", horizon_days: 7, seed: 42,
-      baseline: { total_demand_units: 35, total_fulfilled_units: 15, service_fraction: 15 / 35, daily: [{ day: 0, demand_units: 5, fulfilled_units: 5, backlog_units: 0 }] },
-      disrupted: { total_demand_units: 35, total_fulfilled_units: 5, service_fraction: 5 / 35, daily: [{ day: 0, demand_units: 5, fulfilled_units: 5, backlog_units: 0 }] },
+      baseline: { total_demand_units: 35, total_fulfilled_units: 15, service_fraction: 15 / 35,
+        daily: Array.from({ length: 7 }, (_, day) => ({ day, demand_units: 5, fulfilled_units: day < 3 ? 5 : 0, backlog_units: Math.max(0, day - 2) * 5 })) },
+      disrupted: { total_demand_units: 35, total_fulfilled_units: 5, service_fraction: 5 / 35,
+        daily: Array.from({ length: 7 }, (_, day) => ({ day, demand_units: 5, fulfilled_units: day === 0 ? 5 : 0, backlog_units: day * 5 })) },
       fulfillment_delta_units: -10, assumptions: ["Deterministic demand"], limitations: ["Single component"]
     } });
   });
@@ -164,4 +166,30 @@ test("runs an illustrative bounded simulation without disturbing exposure", asyn
   expect((posted as { config: { horizon_days: number } }).config.horizon_days).toBe(7);
   await page.getByRole("button", { name: /Network exposure/ }).click();
   await expect(page.getByRole("heading", { name: "Structural exposure" })).toBeVisible();
+});
+
+test("rejects incomplete scenario series instead of rendering misleading charts", async ({ page }) => {
+  const example = {
+    network: {},
+    config: {
+      plant_node_id: "plant", sku_id: "sku", component_part_id: "part",
+      initial_component_units: 10, initial_finished_units: 0, daily_demand_units: 5,
+      horizon_days: 7, production_capacity_per_week: 70, disruption_start_day: 0,
+      disruption_duration_days: 7, disruption_severity_fraction: 1, seed: 42
+    }
+  };
+  await page.route("**/api/example/simulation/request", route => route.fulfill({ json: example }));
+  await page.route("**/api/simulation/bounded", route => route.fulfill({ json: {
+    dataset: "Invalid response", synthetic: true, element_id: "plant", horizon_days: 7, seed: 42,
+    baseline: { total_demand_units: 35, total_fulfilled_units: 5, service_fraction: 5 / 35,
+      daily: [{ day: 0, demand_units: 5, fulfilled_units: 5, backlog_units: 0 }] },
+    disrupted: { total_demand_units: 35, total_fulfilled_units: 0, service_fraction: 0,
+      daily: [{ day: 0, demand_units: 5, fulfilled_units: 0, backlog_units: 5 }] },
+    fulfillment_delta_units: -5, assumptions: [], limitations: []
+  } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: /Scenario comparison/ }).click();
+  await page.getByRole("button", { name: "Run comparison" }).click();
+  await expect(page.getByRole("alert")).toContainText("Unexpected simulation response format");
+  await expect(page.getByRole("region", { name: "Scenario results" })).toHaveCount(0);
 });

@@ -53,18 +53,42 @@
   function isComparison(value: unknown): value is Comparison {
     if (!value || typeof value !== "object") return false;
     const data = value as Record<string, unknown>;
-    const outcome = (item: unknown) => {
+    const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+    if (!Number.isInteger(data.horizon_days) || !finite(data.horizon_days) || data.horizon_days < 1 || data.horizon_days > 90 ||
+        !Number.isInteger(data.seed) || !finite(data.seed) || data.seed < 0 ||
+        typeof data.dataset !== "string" || typeof data.element_id !== "string" ||
+        typeof data.synthetic !== "boolean" || !finite(data.fulfillment_delta_units) ||
+        !Array.isArray(data.assumptions) || !data.assumptions.every(x => typeof x === "string") ||
+        !Array.isArray(data.limitations) || !data.limitations.every(x => typeof x === "string")) return false;
+
+    const validOutcome = (item: unknown): item is Outcome => {
       if (!item || typeof item !== "object") return false;
       const run = item as Record<string, unknown>;
-      return ["total_demand_units", "total_fulfilled_units", "service_fraction"].every(k => typeof run[k] === "number" && Number.isFinite(run[k])) &&
-        Array.isArray(run.daily) && run.daily.every((day: unknown) => day !== null && typeof day === "object" &&
-          ["day", "demand_units", "fulfilled_units", "backlog_units"].every(k => typeof (day as Record<string, unknown>)[k] === "number" && Number.isFinite((day as Record<string, unknown>)[k])));
+      if (!finite(run.total_demand_units) || !finite(run.total_fulfilled_units) ||
+          !finite(run.service_fraction) || run.service_fraction < 0 || run.service_fraction > 1 ||
+          !Array.isArray(run.daily) || run.daily.length !== data.horizon_days) return false;
+      let demand = 0;
+      let fulfilled = 0;
+      for (const [index, item] of run.daily.entries()) {
+        if (!item || typeof item !== "object") return false;
+        const day = item as Record<string, unknown>;
+        if (day.day !== index || !finite(day.demand_units) || !finite(day.fulfilled_units) ||
+            !finite(day.backlog_units) || day.demand_units < 0 || day.fulfilled_units < 0 ||
+            day.backlog_units < 0) return false;
+        demand += day.demand_units;
+        fulfilled += day.fulfilled_units;
+        if (Math.abs(day.backlog_units - (demand - fulfilled)) > 1e-7 * Math.max(1, demand)) return false;
+      }
+      return Math.abs(run.total_demand_units - demand) <= 1e-7 * Math.max(1, demand) &&
+        Math.abs(run.total_fulfilled_units - fulfilled) <= 1e-7 * Math.max(1, fulfilled) &&
+        Math.abs(run.service_fraction - (demand ? fulfilled / demand : 1)) <= 1e-7;
     };
-    return typeof data.dataset === "string" && typeof data.synthetic === "boolean" &&
-      typeof data.fulfillment_delta_units === "number" && Number.isFinite(data.fulfillment_delta_units) &&
-      outcome(data.baseline) && outcome(data.disrupted) &&
-      Array.isArray(data.assumptions) && data.assumptions.every(x => typeof x === "string") &&
-      Array.isArray(data.limitations) && data.limitations.every(x => typeof x === "string");
+    if (!validOutcome(data.baseline) || !validOutcome(data.disrupted)) return false;
+    return Math.abs(data.baseline.total_demand_units - data.disrupted.total_demand_units) <=
+      1e-7 * Math.max(1, data.baseline.total_demand_units) &&
+      Math.abs(data.fulfillment_delta_units -
+        (data.disrupted.total_fulfilled_units - data.baseline.total_fulfilled_units)) <=
+      1e-7 * Math.max(1, data.baseline.total_fulfilled_units);
   }
   async function loadExample() {
     aborter?.abort();
