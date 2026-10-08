@@ -61,6 +61,11 @@ from daysofcover.lp.aggregate import (
 )
 from daysofcover.models.network import Network
 
+
+class WeeklyCoverSolverError(RuntimeError):
+    """An LP run ended without a reliable feasibility determination."""
+
+
 MAX_WEEKS_SEARCHED = 32
 WEEKS_PER_YEAR = 52
 
@@ -206,7 +211,13 @@ def _feasible(
         start_week=start_week,
     )
     result = builder.solve({}, maximize=False)
-    return bool(result.success)
+    if result.status == 0 and result.success:
+        return True
+    if result.status == 2:
+        return False
+    raise WeeklyCoverSolverError(
+        f"Weekly cover feasibility solve failed (status={result.status}): {result.message}"
+    )
 
 
 def _max_feasible_weeks(
