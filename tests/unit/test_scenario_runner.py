@@ -95,7 +95,8 @@ def test_surplus_components_are_conserved_across_multiple_days() -> None:
             disruption_duration_days=7.0,
         ),
     )
-    assert [day.fulfilled_units for day in result.baseline.daily] == [0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
+    baseline_daily = [day.fulfilled_units for day in result.baseline.daily]
+    assert baseline_daily == [0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
     assert [day.fulfilled_units for day in result.disrupted.daily] == [0.0] * 7
     assert result.baseline.total_fulfilled_units == 30.0
     assert result.disrupted.total_fulfilled_units == 0.0
