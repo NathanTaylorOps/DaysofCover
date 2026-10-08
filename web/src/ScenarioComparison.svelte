@@ -32,7 +32,7 @@
     { key: "horizon_days", label: "Analysis horizon (days)", step: "1", min: 1, max: 90 },
     { key: "production_capacity_per_week", label: "Production capacity (units/week)", step: "1", min: 0, max: 1000000000 },
     { key: "disruption_start_day", label: "Disruption begins (day 0 = first day)", step: "1", min: 0, max: 90 },
-    { key: "disruption_duration_days", label: "Disruption duration (days)", step: "1", min: 0.01, max: 90 },
+    { key: "disruption_duration_days", label: "Disruption duration (days)", step: "any", min: 0.01, max: 90 },
     { key: "disruption_severity_fraction", label: "Disruption severity (0–1)", step: "any", min: 0.01, max: 1 }
   ];
   function update(key: keyof Config, event: Event) {
