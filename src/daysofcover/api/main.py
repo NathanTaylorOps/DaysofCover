@@ -21,19 +21,20 @@ always Linux, so the number that matters is always real.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from daysofcover import __version__
 from daysofcover.engine.scenario_runner import BoundedScenarioInput, compare_bounded_scenario
+from daysofcover.io.loaders import load_network
 from daysofcover.models.network import Network, StrictModel
 from daysofcover.models.results import ScenarioComparison
-from daysofcover.io.loaders import load_network
 from daysofcover.lp.structure import structural_convergence
 
 if sys.platform != "win32":
@@ -68,7 +69,7 @@ class ExposureReport(BaseModel):
 
 
 class SimulationRequest(StrictModel):
-    network: Network
+    network: dict[str, Any]
     config: BoundedScenarioInput
 
 
@@ -80,8 +81,11 @@ def bounded_simulation(request: SimulationRequest) -> ScenarioComparison:
     contain multi-component BOMs, unsupported by the bounded runner.
     """
     try:
-        return compare_bounded_scenario(request.network, request.config)
-    except ValueError as exc:
+        # Strict network enums accept their string values in JSON mode,
+        # but reject strings in Python-mode model validation.
+        network = Network.model_validate_json(json.dumps(request.network))
+        return compare_bounded_scenario(network, request.config)
+    except (ValueError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
