@@ -48,9 +48,9 @@ test("sorts exposure and pair counts independently", async ({ page }) => {
   const rows = page.locator("tbody tr");
   await expect(rows.first().getByRole("button", { name: "N1" })).toBeVisible();
   await page.getByRole("button", { name: /AFFECTED PAIRS/ }).click();
-  await expect(rows.first().getByRole("button", { name: "L1" })).toBeVisible();
-  await page.getByRole("button", { name: /AFFECTED PAIRS/ }).click();
   await expect(rows.first().getByRole("button", { name: "N1" })).toBeVisible();
+  await page.getByRole("button", { name: /AFFECTED PAIRS/ }).click();
+  await expect(rows.first().getByRole("button", { name: "L1" })).toBeVisible();
 });
 
 test("shows a retryable error for invalid API responses", async ({ page }) => {
