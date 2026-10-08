@@ -1113,7 +1113,7 @@ def test_fractional_batch_consumption_preserves_unallocated_components() -> None
 
 
 def test_batch_rounding_does_not_destroy_shared_component_inventory() -> None:
-    """Neither SKU can start a five-unit batch from an even split of nine."""
+    """Redistribution starts one feasible batch instead of idling nine units."""
     network = _two_sku_network()
     state = NetworkState.from_network(network)
     shipments = NetworkShipments.from_network(network)
@@ -1141,8 +1141,8 @@ def test_batch_rounding_does_not_destroy_shared_component_inventory() -> None:
         sku_specs=specs,
         current_day=0,
     )
-    assert [sku.production_started for sku in report.sku_reports] == [0.0, 0.0]
-    assert state.on_hand[plant, part] == 9.0
+    assert [sku.production_started for sku in report.sku_reports] == [5.0, 0.0]
+    assert state.on_hand[plant, part] == 4.0
 
 
 def test_plant_recovers_capacity_after_two_day_shutdown() -> None:
@@ -1185,3 +1185,41 @@ def test_plant_recovers_capacity_after_two_day_shutdown() -> None:
     assert started == [10.0, 0.0, 0.0, 10.0, 10.0]
     assert completed == [0.0, 10.0, 0.0, 0.0, 10.0]
     assert state.on_hand[plant, part] == 70.0
+
+
+def test_batch_aware_allocation_is_independent_of_sku_input_order() -> None:
+    """Equal-backlog allocation uses SKU IDs for deterministic ties."""
+    def run(order: tuple[str, str]) -> tuple[dict[str, float], float]:
+        network = _two_sku_network()
+        state = NetworkState.from_network(network)
+        shipments = NetworkShipments.from_network(network)
+        plant = state.node_index("plant-1")
+        part = state.part_index("part-a")
+        state.on_hand[plant, part] = 9.0
+        specs = [
+            SkuProductionSpec(
+                finished_sku_id=sku_id,
+                bom=[BOMLine(part_id="part-a", quantity=1.0)],
+                capacity_per_week=70.0,
+                batch_size=5.0,
+                production_lead_time_days=1.0,
+                orders=[],
+                production_queue=ProductionQueue(),
+            )
+            for sku_id in order
+        ]
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id=None,
+            sku_specs=specs,
+            current_day=0,
+        )
+        started = {item.finished_sku_id: item.production_started for item in report.sku_reports}
+        return started, float(state.on_hand[plant, part])
+
+    expected = ({"sku-a": 5.0, "sku-b": 0.0}, 4.0)
+    assert run(("sku-a", "sku-b")) == expected
+    assert run(("sku-b", "sku-a")) == expected
