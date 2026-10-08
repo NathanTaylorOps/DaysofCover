@@ -1,53 +1,21 @@
-"""Distribution: routing finished goods from a plant to customers over real lanes.
+"""Route finished goods from production sites to customer-facing nodes.
 
-Every earlier session fulfilled a customer's order directly against the
-plant's own ``finished_on_hand`` -- no lead time, no lane, no capacity
-limit, whichever customer it was. The schema (and the seeded Moreton
-Marine network) already describes a real distribution network -- a
-plant shipping to a DC, a DC fanning out to several customers, each leg
-a real :class:`daysofcover.models.network.Lane` with its own capacity
-and lead time -- but nothing in the engine ever read it; those lanes
-were decoration for the network diagram, not something goods actually
-moved across.
+A distribution tree maps configured outbound lanes from one plant to its
+reachable customers. Each lane uses the existing shipment model, including
+lead times, weekly capacity, minimum order quantities and disruption state.
 
-This module is that missing piece, built to reuse what Stage 1 already
-proved rather than invent new mechanics: the transit itself is the same
-:class:`daysofcover.engine.shipments.NetworkShipments` used for inbound
-components, just keyed by ``sku_id`` instead of ``part_id`` (it was
-already generic on that key); a lane's own weekly capacity and MOQ are
-still enforced by :func:`daysofcover.engine.shipments.cap_order_quantity`;
-a fully or partially disrupted lane still behaves exactly as
-:mod:`daysofcover.engine.disruption_state` already defines.
+The route is deliberately a tree rather than a general graph: each
+reachable node has one upstream path. Ambiguous alternate paths are
+rejected rather than selected implicitly.
 
-:func:`build_distribution_tree` resolves the network's real lanes into a
-tree from one plant to every customer reachable from it, once, up
-front -- the schema does not restrict a lane to carrying one particular
-SKU, so the same tree serves every SKU produced at that plant. It is
-deliberately a tree, not a general graph: case 8's own validation
-premise ("tree network with one path per part") is the assumption this
-module holds itself to, and a second path reaching the same node is
-rejected with a clear error rather than silently picking one.
+Outbound movement uses a push policy. Available finished goods are
+allocated across downstream branches according to outstanding demand and
+then constrained by the corresponding lane. This is distinct from the
+inbound component replenishment policy, which targets inventory position.
 
-:func:`push_finished_goods` is the daily routing decision, and it is
-push, not pull: finished goods sitting anywhere but the customer-facing
-node are pure waste, so every node on the tree ships out whatever it is
-holding as soon as it has it, split across its downstream branches by
-each branch's own outstanding customer backlog (the exact reuse of the
-proportional-split idea session 17 built for splitting a scarce
-component across SKUs, just applied to splitting a scarce outbound
-shipment across customers instead), then capped branch by branch
-against that branch's own lane the same way session 21's dual-source
-reorder caps each supplier's own share independently. No order-up-to
-policy is needed here, unlike the inbound component side: a customer's
-order is a firm, dated demand, not an inventory target a downstream
-node is trying to reach.
-
-A network with no customer-typed node at all (every test network
-sessions 15 through 22 built) resolves to an empty tree with nothing to
-push, and :mod:`daysofcover.engine.daily_step` falls back to fulfilling
-every order at the plant directly -- byte-for-byte what it always did.
-Passing ``distribution=None`` there is the same fallback, spelled out
-explicitly rather than relying on an empty tree's shape.
+For networks without customer-typed nodes, the distribution tree is empty.
+The daily-step engine can then fulfil demand directly from plant inventory,
+preserving compatibility with networks that omit outbound distribution.
 """
 
 from __future__ import annotations
