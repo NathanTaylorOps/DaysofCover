@@ -357,7 +357,10 @@ def advance_one_day(
             )
             for line in spec.bom:
                 idx = state.part_index(line.part_id)
-                if line.part_id == component_part_id and spec.finished_sku_id in allocated_component:
+                if (
+                    line.part_id == component_part_id
+                    and spec.finished_sku_id in allocated_component
+                ):
                     # The allocation is a production budget, not the plant's
                     # entire stock. Preserve stock that was not allocated.
                     consumed = feasible * line.quantity
