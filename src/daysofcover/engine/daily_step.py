@@ -34,8 +34,7 @@ import numpy as np
 
 from daysofcover.engine.allocation import (
     CustomerOrder,
-    allocate_by_backlog_proportion,
-    allocate_by_margin_priority,
+    allocate_batch_aware_components,
     allocate_finished_goods_to_orders,
     supplier_split_ratios,
 )
@@ -304,24 +303,25 @@ def advance_one_day(
     allocated_component: dict[str, float] = {}
     if requested_component_by_sku:
         available_component = float(state.on_hand[plant, component_idx])
-        if allocation_rule == "margin_priority":
-            allocated_component = allocate_by_margin_priority(
-                available_quantity=available_component,
-                requested_by_sku=requested_component_by_sku,
-                margin_by_sku={spec.finished_sku_id: spec.margin_fraction for spec in sku_specs},
+        backlog_by_sku = {
+            spec.finished_sku_id: float(
+                state.finished_backlog[plant, state.sku_index(spec.finished_sku_id)]
             )
-        else:
-            backlog_by_sku = {
-                spec.finished_sku_id: float(
-                    state.finished_backlog[plant, state.sku_index(spec.finished_sku_id)]
-                )
+            for spec in sku_specs
+        }
+        allocated_component = allocate_batch_aware_components(
+            available_quantity=available_component,
+            requested_by_sku=requested_component_by_sku,
+            batch_component_by_sku={
+                spec.finished_sku_id: spec.batch_size
+                * component_line_by_sku[spec.finished_sku_id].quantity
                 for spec in sku_specs
-            }
-            allocated_component = allocate_by_backlog_proportion(
-                available_quantity=available_component,
-                requested_by_sku=requested_component_by_sku,
-                backlog_by_sku=backlog_by_sku,
-            )
+                if spec.finished_sku_id in component_line_by_sku
+            },
+            backlog_by_sku=backlog_by_sku,
+            margin_by_sku={spec.finished_sku_id: spec.margin_fraction for spec in sku_specs},
+            rule=allocation_rule,
+        )
 
     # 3. each SKU starts whatever its allocated share of the shared
     #    component, plus every other BOM line's real on-hand, actually
