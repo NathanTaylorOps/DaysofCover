@@ -95,9 +95,7 @@ def test_surplus_components_are_conserved_across_multiple_days() -> None:
             disruption_duration_days=7.0,
         ),
     )
-    assert [day.fulfilled_units for day in result.baseline.daily] == [
-        0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0
-    ]
+    assert [day.fulfilled_units for day in result.baseline.daily] == [0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
     assert [day.fulfilled_units for day in result.disrupted.daily] == [0.0] * 7
     assert result.baseline.total_fulfilled_units == 30.0
     assert result.disrupted.total_fulfilled_units == 0.0
@@ -118,9 +116,7 @@ def test_finished_inventory_masks_a_disruption_until_stock_depletes() -> None:
         ),
     )
     assert [day.fulfilled_units for day in result.baseline.daily] == [5.0] * 5
-    assert [day.fulfilled_units for day in result.disrupted.daily] == [
-        5.0, 5.0, 0.0, 0.0, 0.0
-    ]
+    assert [day.fulfilled_units for day in result.disrupted.daily] == [5.0, 5.0, 0.0, 0.0, 0.0]
     assert result.baseline.total_fulfilled_units == 25.0
     assert result.disrupted.total_fulfilled_units == 10.0
 
@@ -138,8 +134,6 @@ def test_component_depletion_limits_production_without_negative_inventory() -> N
             disruption_duration_days=5.0,
         ),
     )
-    assert [day.fulfilled_units for day in result.baseline.daily] == [
-        0.0, 5.0, 5.0, 0.0, 0.0
-    ]
+    assert [day.fulfilled_units for day in result.baseline.daily] == [0.0, 5.0, 5.0, 0.0, 0.0]
     assert result.baseline.total_fulfilled_units == 10.0
     assert result.baseline.daily[-1].backlog_units == 15.0
