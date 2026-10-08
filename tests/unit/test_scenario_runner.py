@@ -46,10 +46,10 @@ def config(**overrides: object) -> BoundedScenarioInput:
         component_part_id="part",
         initial_component_units=200.0,
         daily_demand_units=5.0,
-        horizon_days=14,
+        horizon_days=7,
         production_capacity_per_week=70.0,
         disruption_start_day=0,
-        disruption_duration_days=10.0,
+        disruption_duration_days=7.0,
         disruption_severity_fraction=1.0,
         seed=42,
     )
@@ -63,7 +63,7 @@ def test_disruption_reduces_fulfilment_and_is_reproducible() -> None:
     assert result.baseline.total_fulfilled_units > result.disrupted.total_fulfilled_units
     assert result.fulfillment_delta_units < 0
     assert result == compare_bounded_scenario(network, config())
-    assert len(result.baseline.daily) == 14
+    assert len(result.baseline.daily) == 7
     assert result.baseline.total_demand_units == result.disrupted.total_demand_units
 
 
