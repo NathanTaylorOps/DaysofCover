@@ -183,3 +183,32 @@ def test_surviving_the_full_search_cap_is_reported_rather_than_claimed_infinite(
 
     assert result.at_cap
     assert result.cover_weeks == 32
+
+
+def test_solver_failure_is_not_reported_as_infeasible(monkeypatch) -> None:
+    """Numerical or resource failures must not be mistaken for zero cover."""
+    from types import SimpleNamespace
+
+    import pytest
+
+    from daysofcover.lp.aggregate import _LPBuilder, _resolve
+    from daysofcover.lp.weekly import WeeklyCoverSolverError, _feasible, _weekly_demand_rates
+
+    network = _single_customer_network(demand_profile=_flat_profile(base_weekly_rate=70.0))
+    resolved = _resolve(network, removed_element_id=None)
+    rates = _weekly_demand_rates(network, live_node_ids=frozenset(resolved.node_ids))
+    monkeypatch.setattr(
+        _LPBuilder,
+        "solve",
+        lambda self, objective, *, maximize: SimpleNamespace(
+            status=4, success=False, message="numerical failure"
+        ),
+    )
+    with pytest.raises(WeeklyCoverSolverError, match="numerical failure"):
+        _feasible(
+            resolved,
+            rates,
+            starting_inventory={("cust-1", sku_key("sku-a")): 210.0},
+            n_weeks=1,
+            start_week=0,
+        )
