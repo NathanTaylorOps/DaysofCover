@@ -30,8 +30,6 @@
   let sortBy = $state<"exposure" | "element" | "pairs">("exposure");
   let sortDescending = $state(true);
 
-  const selectedVisible = $derived(selected !== null && filtered.some((row) => row.element_id === selected?.element_id && row.element_type === selected?.element_type));
-
   const filtered = $derived.by(() => {
     const rows = (report?.rows ?? []).filter(
       (row) =>
@@ -49,6 +47,8 @@
       return direction * (leftValue - rightValue) || left.element_id.localeCompare(right.element_id);
     });
   });
+
+  const selectedVisible = $derived(selected !== null && filtered.some((row) => row.element_id === selected?.element_id && row.element_type === selected?.element_type));
 
   function setSort(column: "exposure" | "element" | "pairs") {
     if (sortBy === column) {
