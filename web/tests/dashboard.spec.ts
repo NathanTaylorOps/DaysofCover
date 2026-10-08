@@ -109,3 +109,25 @@ test("rejects invalid network counts rather than displaying misleading metrics",
   await page.goto("/");
   await expect(page.getByRole("alert")).toContainText("Unexpected analysis response format");
 });
+
+test("supports keyboard-only filtering, search reset and element inspection", async ({ page }) => {
+  await page.goto("/");
+  const lanes = page.getByRole("button", { name: "Lanes", exact: true });
+  await lanes.focus();
+  await page.keyboard.press("Enter");
+  await expect(lanes).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "false");
+  const search = page.getByRole("textbox", { name: "Search network elements" });
+  await search.focus();
+  await page.keyboard.type("Primary supplier");
+  await expect(search).toHaveValue("Primary supplier");
+  await page.keyboard.press("Escape");
+  await expect(search).toHaveValue("");
+  await page.getByRole("button", { name: "All", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const supplier = page.getByRole("button", { name: "N1", exact: true });
+  await supplier.focus();
+  await page.keyboard.press("Enter");
+  await expect(supplier).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("complementary", { name: "Element inspector" }).getByRole("heading", { name: "Primary supplier" })).toBeVisible();
+});
