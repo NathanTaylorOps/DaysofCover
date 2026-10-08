@@ -1,123 +1,29 @@
-"""One day of the world: composing state, shipments, production and allocation.
+"""Advance the multi-node supply-network state by one operating day.
 
-Session 17 wired in the SKU-sharing-a-component allocation rule; session
-18 wired in the customer-competing-for-finished-goods allocation rule.
-This session takes the last item off that pair's original deferred
-list: "reordering components to replenish the plant". Until now, the
-plant's on-hand component stock only ever moved because a caller called
-:meth:`daysofcover.engine.shipments.NetworkShipments.ship` directly --
-every test so far has played that role itself; the plant never decided
-to place an order. This session gives it that decision, in the simplest
-form the build plan's own words support: "ordering reviewed weekly" --
-a periodic-review, order-up-to policy, the same shape as session 12's
-spike (:func:`daysofcover.engine.single_node.simulate_periodic_order_up_to`),
-now placing a real shipment on a real lane instead of pushing a number
-into a bare NumPy pipeline.
+This module composes shipment arrivals, production, shared-component
+allocation, customer fulfilment and periodic component replenishment.
 
-The order-up-to decision is made after everything else that day --
-shipments have already arrived, every SKU's production for the day has
-already started -- so it sees the day's true ending inventory position:
-on-hand plus what's already on order, read from
-:meth:`daysofcover.engine.shipments.NetworkShipments.outstanding_at_node`
-(session 22 replaced this session's original shadow counter with a
-read of the real per-shipment records -- see
-:mod:`daysofcover.engine.state`'s module docstring), never
-double-ordering for a shipment already in the pipeline. On a non-review
-day, or when ``order_up_to``/``review_period_days`` are left ``None``
-(the default), nothing changes and every earlier session's calls still
-work exactly as they always have.
+Replenishment uses the ending inventory position (on-hand plus outstanding
+shipments) to avoid ordering stock already in transit. Orders are subject
+to each lane's minimum order quantity and remaining weekly capacity.
+When multiple suppliers are configured, the replenishment quantity follows
+the configured sourcing split or a contingent switch informed by disruption
+state. Each supplier lane is constrained independently.
 
-Backlog is still tracked only in aggregate per (node, sku), not per
-customer -- an order that goes unfulfilled today adds to the SKU's one
-backlog number, and there is no record of *whose* order that was, so a
-later day's surplus stock cannot be preferentially repaid to the
-customer that has waited longest. That would need its own per-customer
-backlog ledger, which is not this session's job.
+Optional distribution-tree routing moves completed products through the
+configured distribution network before customer fulfilment. Without that
+routing, the engine retains the direct plant-fulfilment behaviour for
+backwards compatibility. Missing customer routes fall back to the plant.
 
-Session 20 caps that order-up-to quantity against the inbound lane's
-own ``moq`` and ``capacity_per_week`` (:func:`daysofcover.engine.
-shipments.cap_order_quantity`), rather than always placing the full
-desired order -- a real supplier will not ship less than its minimum
-order quantity, and no lane ships more than its own weekly capacity
-regardless of how badly the plant wants it. When the capped quantity
-comes back as zero (an MOQ the desired order can't clear, or a week
-already fully used), no shipment is placed at all and the on-order
-position is left untouched -- the plant simply tries again on the next
-review day.
+Backlog is maintained in aggregate by node and SKU, not as a persistent
+per-customer order ledger. Within-day allocation rules can prioritise
+orders, but future-day fulfilment cannot recover the original customer
+ordering sequence from aggregate backlog. This is a modelling limitation,
+not an individual-order scheduling system.
 
-Session 21 wires in the last of session 16's three allocation
-functions still sitting unused: :func:`daysofcover.engine.allocation.
-supplier_split_ratios`. A dual-sourced part's reorder now splits across
-every one of its suppliers' own lanes according to that function's
-ratios -- normally the part's fixed ``split_ratio``\\ s, or, once the
-primary has been down for at least its own ``detect_delay_days``, a
-contingent full switch to the backup or backups. This is the single-
-lane reorder from sessions 19 and 20 generalised to N suppliers, not
-replaced by it: leaving the new ``component_suppliers`` parameter
-``None`` (the default) keeps ordering on the single ``inbound_lane_id``
-exactly as every earlier session wrote it. When it is given, each
-supplier's own share is independently capped by that supplier's own
-lane's MOQ and remaining weekly capacity -- one supplier's lane being
-tight this week never holds back another's -- and ``inbound_lane_id``
-plays no part in either receiving or ordering; every lane in ``lane_by
-_supplier`` is read instead.
-
-Deliberately out of scope when this session (21) was written, but no
-longer: *detecting* a primary supplier as down in the first place was a
-disruption-modelling question with nothing to plug into yet. Session
-22 adds that plug. ``disruption_state``
-(:class:`daysofcover.engine.disruption_state.DisruptionState`, built
-from a scenario's own ``Disruption`` list) is optional and defaults to
-``None``, which leaves every earlier session's call exactly as it was:
-
-- A lane whose current severity is 1.0 (fully down -- see
-  ``disruption_state``'s own module docstring for what "fully down"
-  means versus a partial slowdown) is skipped entirely on the
-  receiving side: :meth:`daysofcover.engine.shipments.NetworkShipments.
-  receive` is not called for it this day, so whatever has already
-  arrived at that lane's destination stays queued rather than landing
-  on the shelf -- a closed port holding cargo, not losing it.
-- Every lane's remaining capacity, wherever it is read for a reorder
-  decision, is scaled by ``(1 - severity)`` for that lane today, on top
-  of its own ``capacity_per_week``/``moq`` limits -- a fractional
-  severity throttles new orders without needing its own separate cap.
-- ``plant_node_id`` itself being fully down pauses the whole reorder
-  decision for the day (no order placed, on-order position untouched),
-  the real-engine analog of case 4's order-pausing mechanic.
-- Each SKU's production capacity for the day is scaled by ``(1 -
-  severity)`` for ``plant_node_id``, using the exact linear-ramp shape
-  :mod:`daysofcover.engine.ramp` already validated against case 12 --
-  a disrupted plant does not production-plan at zero one day and full
-  capacity the next, it ramps.
-
-On-order inventory position (see :func:`daysofcover.engine.state`'s
-module docstring) is now always read from
-:meth:`daysofcover.engine.shipments.NetworkShipments.outstanding_at_node`,
-the real per-shipment records, never from a separately maintained
-counter.
-
-Session 22's review also found the customer side of the network never
-existed as far as the engine was concerned: every order was fulfilled
-directly against the plant's own ``finished_on_hand``, whichever
-customer it was, with no lead time and no lane -- the schema's real
-distribution lanes (a DC fanning out to several customers, in the
-seeded Moreton Marine network) were decoration on the diagram, never
-read by this function. ``distribution``
-(:class:`daysofcover.engine.distribution.DistributionTree`, built once
-from the network's own lanes) is optional and defaults to ``None``,
-which is exactly the fallback above -- fulfil every order at the plant
-directly. When it is given, today's newly completed production is
-pushed one hop further down the tree at every node on it (see
-distribution.py's own module docstring for the push-not-pull design and
-why it runs before fulfillment), and each order is then fulfilled at
-whichever node its own customer id resolves to on the tree -- the plant
-itself for a customer with no node on the tree at all, so a network
-that only partly models its distribution side degrades gracefully
-rather than dropping those orders. Backlog now accumulates at whichever
-node actually held the shortfall, not always at the plant.
-
-Still deliberately out of scope: the per-customer backlog ledger
-mentioned above.
+The simulation state, shipment records, disruption model and allocation
+policies are implemented in their respective modules; this function
+coordinates them without replacing their validation contracts.
 """
 
 from __future__ import annotations
