@@ -6,7 +6,7 @@
 
 Days of Cover is a Python-based supply-network analysis project that combines **inventory and disruption simulation**, **linear-programming models of supply coverage**, and **structural dependency screening**. It is designed to turn a complex supplier network into questions an operations leader can evaluate: continuity, exposure, constraints and mitigation trade-offs.
 
-**Project status: active development.** The simulation and optimisation libraries, command-line analysis and automated validation are implemented in varying degrees; the hosted Svelte interface is currently a **technical preview**, not a working stress-test dashboard. The mitigation-selection optimiser and complete scenario-running web experience are not yet implemented. This README distinguishes the capabilities available now from the intended product.
+**Project status: active development.** The simulation and optimisation libraries, command-line analysis and automated validation are implemented in varying degrees; the hosted Svelte interface includes a **bounded, single-plant scenario comparison**, while general multi-node scenario orchestration and the mitigation-selection optimiser are not exposed as finished web workflows. This README distinguishes the capabilities available now from the intended product.
 
 [Explore the example network](src/daysofcover/data/examples/moreton_marine/README.md) · [Validation evidence](VALIDATION.md) · [Architecture decisions](docs/explanation/README.md) · [Changelog](CHANGELOG.md)
 
@@ -35,8 +35,8 @@ Days of Cover treats these as related but **different analytical questions**. A 
 | Weekly time-indexed cover analysis | Implemented | Python LP module |
 | AND/OR supply-dependency screen | Implemented | Python module; CLI cover ranking |
 | Reference comparisons and automated test workflows | Implemented | `VALIDATION.md`, `tests/`, GitHub Actions |
-| Hosted interactive stress-test dashboard | **Not yet implemented** | Current web deployment is a health-check preview |
-| Scenario execution API and management report | **Not yet implemented** | Planned integration work |
+| Bounded single-plant scenario comparison dashboard | Implemented; limited scope | Svelte interface and example scenario |
+| Bounded synchronous scenario comparison API | Implemented; limited scope | `POST /api/simulation/bounded`; `POST /api/example/simulation` |
 | Automated mitigation-menu optimiser | **Not yet implemented** | Mitigation schema exists; optimiser remains future work |
 
 “Implemented” describes the code currently present; it does not imply that every component has been connected into a finished decision workflow. See [validation scope](#validation-and-model-boundaries).
@@ -83,7 +83,7 @@ The Python modules expose additional modelling functions not yet assembled into 
 
 ### Hosted preview
 
-The repository includes a Dockerised Svelte frontend served by FastAPI and a `/health` endpoint. The currently deployed interface is a **deployment/health preview only**. It cannot yet run the stress-test workflow described in the product vision.
+The repository includes a Dockerised Svelte frontend served by FastAPI and a `/health` endpoint. The application includes an interactive bounded single-plant comparison and a deterministic bundled example. It is **not** a general multi-node scenario planning service or a validated production decision system.
 
 The Render deployment is configured through [`render.yaml`](render.yaml); availability of any particular hosted instance should be checked before publishing a live-demo link.
 
@@ -105,8 +105,8 @@ The LP and simulation layers answer different questions and may disagree for leg
 | Dynamic engine | Python, NumPy | Inventory, shipment and production state transitions |
 | Optimisation | SciPy / HiGHS | Coverage, impact, inventory buffers and weekly feasibility |
 | Command line | Typer | Network validation and exposure ranking |
-| Web service | FastAPI | Current health endpoint and static frontend hosting |
-| Frontend | Svelte 5, TypeScript, Vite | Currently a technical preview |
+| Web service | FastAPI | Static hosting, health, examples and bounded scenario comparison API |
+| Frontend | Svelte 5, TypeScript, Vite | Bounded scenario input, comparison charts and reporting |
 | Quality and deployment | pytest, Hypothesis, Ruff, mypy, Docker, GitHub Actions | Automated checks and reproducible packaging |
 
 Design choices are recorded in [eight architecture decision records](docs/explanation/README.md), including the rationale for a custom daily-step engine, shared-shock hazard groups, linear programming and a stateless API design.
@@ -123,19 +123,19 @@ Other important boundaries:
 - Structural dependency exposure is not the same as time-to-stockout or financial loss.
 - Aggregate LPs simplify the timing and operating friction represented in dynamic simulation.
 - A modelled revenue or margin exposure is not a realised financial outcome.
-- The full scenario orchestration, user-facing reporting and automated mitigation selection are still in development.
+- Bounded single-plant reporting is available; general multi-node scenario orchestration and automated mitigation selection remain future work.
 - The application is decision support, not a substitute for supplier due diligence, procurement judgement or a production planning system.
 
 ## Development direction
 
-The next meaningful milestone is **one verified end-to-end management scenario**, not a larger catalogue of disconnected features:
+The next milestone is **release acceptance of the bounded end-to-end management scenario**, not a larger catalogue of disconnected features:
 
-1. Connect a bounded scenario-execution API to the existing analytical components.
-2. Present a baseline and a selected disruption in the Svelte interface.
-3. Clearly label structural results, LP estimates and simulation outputs.
-4. Provide understandable assumptions, solver/error states and reproducible results.
-5. Add frontend/API integration tests and a worked Moreton Marine decision case study.
-6. Only then expand to mitigation comparisons and optimisation where supported by validated implementation.
+1. Verify the bounded API and browser workflow against a reproducible, documented fixture.
+2. Confirm numerical interpretation, input limits, failure states and accessibility.
+3. Validate the deployed container and its health endpoint independently of CI.
+4. Reconcile release notes, example documentation and known model limitations.
+5. Record remaining limitations before declaring a stable release.
+6. Expand to mitigation comparisons and optimisation only where supported by validated implementation.
 
 Progress and implementation details belong in the [changelog](CHANGELOG.md); completed features will be reflected here only when verified.
 
