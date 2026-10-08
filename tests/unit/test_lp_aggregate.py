@@ -340,7 +340,9 @@ def test_fixed_horizon_impact_does_not_teleport_stock_across_a_slow_lane() -> No
     # takes one day. Half a day of demand is five units.
     inventory = {("plant-1", sku_key("sku-a")): 10.0}
     short = solve_impact(
-        network, removed_element_id="lane-in", horizon_days=0.5,
+        network,
+        removed_element_id="lane-in",
+        horizon_days=0.5,
         starting_inventory=inventory,
     )
     assert short.status == "optimal"
@@ -348,7 +350,9 @@ def test_fixed_horizon_impact_does_not_teleport_stock_across_a_slow_lane() -> No
 
     # A two-day horizon permits the pre-positioned plant stock to arrive.
     longer = solve_impact(
-        network, removed_element_id="lane-in", horizon_days=2.0,
+        network,
+        removed_element_id="lane-in",
+        horizon_days=2.0,
         starting_inventory=inventory,
     )
     assert longer.status == "optimal"
