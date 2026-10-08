@@ -1447,8 +1447,6 @@ def test_multiday_shared_component_ledger_with_competing_skus() -> None:
             total_started,
         )
         assert np.isclose(float(state.finished_on_hand[plant].sum()) + total_met, total_completed)
-        assert np.isclose(
-            float(state.finished_backlog[plant].sum()) + total_met, total_demand
-        )
+        assert np.isclose(float(state.finished_backlog[plant].sum()) + total_met, total_demand)
         assert np.all(state.on_hand >= -1e-8)
         assert np.all(state.finished_on_hand >= -1e-8)
