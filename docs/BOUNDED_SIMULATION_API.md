@@ -21,7 +21,10 @@ processed by this bounded runner.
 ## Limits and interpretation
 
 - Exactly one selected plant, one SKU and one BOM component per run.
-- Maximum horizon: 90 days; disruption duration is limited to 90 days.\n  Component inventory, finished stock, daily demand and weekly capacity are\n  each capped at 1 billion units to bound arithmetic and prevent overflow.\n  Demand is constant each day, with caller-supplied
+- Maximum horizon: 90 days; disruption duration is limited to 90 days.
+  Component inventory, finished stock, daily demand and weekly capacity are
+  each capped at 1 billion units to bound arithmetic and prevent overflow.
+  Demand is constant each day, with caller-supplied
   initial component inventory, finished stock and production capacity.
 - No replenishment, supplier/lane simulation, distribution, stochastic demand,
   financial-loss calculation or full-network resilience estimate.
