@@ -112,6 +112,16 @@
       if (aborter === controller) { running = false; aborter = null; }
     }
   }
+  const weeklyDemand = $derived((example?.config.daily_demand_units ?? 0) * 7);
+  const weeklyCapacity = $derived(example?.config.production_capacity_per_week ?? 0);
+  const capacityConstrained = $derived(weeklyDemand > weeklyCapacity && weeklyDemand > 0);
+  const impactAbsent = $derived(result !== null && Math.abs(result.fulfillment_delta_units) < 0.0000001);
+  function explainResult(): string {
+    if (!result || !example) return "";
+    if (impactAbsent && capacityConstrained) return "The disrupted and baseline runs fulfil the same number of units. Baseline capacity is already below demand, and existing finished stock can also mask the effect of a disruption. This comparison does not establish that the disruption has no operational consequences.";
+    if (impactAbsent) return "The model shows no change in same-day fulfilment over this horizon. Existing inventory, disruption timing or other constraints may mask the impact; try a longer horizon or different inventory and capacity assumptions.";
+    return "The disruption changes same-day fulfilment by " + result.fulfillment_delta_units.toLocaleString() + " units relative to baseline. Compare the daily bars and backlog to see when the runs diverge.";
+  }
   function percent(value: number) { return `${(value * 100).toFixed(1)}%`; }
   onMount(() => { void loadExample(); return () => aborter?.abort(); });
 </script>
@@ -135,6 +145,15 @@
           <label><span>{field.label}</span><input type="number" required min={field.min} max={field.max} step={field.step} value={example.config[field.key]} oninput={event => update(field.key, event)} /></label>
         {/each}
       </div>
+      <div class="capacity-summary" role="status">
+        <strong>Capacity check</strong>
+        <span>Weekly demand: {weeklyDemand.toLocaleString()} units · Baseline capacity: {weeklyCapacity.toLocaleString()} units/week</span>
+        {#if capacityConstrained}
+          <p>Baseline production capacity is below demand even before disruption. A disruption may have little additional effect on same-day service, especially while finished stock remains.</p>
+        {:else}
+          <p>Nominal weekly production capacity meets or exceeds demand. Component availability, batch sizes, lead time and finished inventory still affect service.</p>
+        {/if}
+      </div>
       <div class="form-bottom"><span>Plant: {example.config.plant_node_id} · SKU: {example.config.sku_id} · Component: {example.config.component_part_id}</span><button type="submit" disabled={running}>{running ? "Running comparison…" : "Run comparison"}</button></div>
     </form>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -145,6 +164,19 @@
           <div class="panel metric"><span>BASELINE SERVICE</span><strong>{percent(result.baseline.service_fraction)}</strong><small>{result.baseline.total_fulfilled_units} / {result.baseline.total_demand_units} units</small></div>
           <div class="panel metric"><span>DISRUPTED SERVICE</span><strong>{percent(result.disrupted.service_fraction)}</strong><small>{result.disrupted.total_fulfilled_units} / {result.disrupted.total_demand_units} units</small></div>
           <div class="panel metric"><span>FULFILMENT DIFFERENCE</span><strong>{result.fulfillment_delta_units > 0 ? "+" : ""}{result.fulfillment_delta_units} units</strong><small>Disrupted minus baseline</small></div>
+        </div>
+        <div class="panel interpretation" role="status"><h2>What the comparison means</h2><p>{explainResult()}</p></div>
+        <div class="panel chart-panel"><h2>Daily fulfilment comparison</h2><p>Bars show the share of each day's new demand fulfilled. Blue: baseline; dark: disrupted.</p>
+          <div class="chart-key"><span><i class="baseline-key"></i>Baseline</span><span><i class="disrupted-key"></i>Disrupted</span></div>
+          <div class="chart-scroll"><div class="chart-grid">
+            {#each result.baseline.daily as day, i (day.day)}
+              <div class="chart-day" title={`Day ${day.day}: baseline ${day.fulfilled_units}, disrupted ${result.disrupted.daily[i]?.fulfilled_units ?? 0} units`}>
+                <div class="bar-pair"><div class="chart-bar baseline-bar" style:height={percent(day.demand_units ? Math.min(1,day.fulfilled_units / day.demand_units) : 1)}></div><div class="chart-bar disrupted-bar" style:height={percent(day.demand_units ? Math.min(1,(result.disrupted.daily[i]?.fulfilled_units ?? 0) / day.demand_units) : 1)}></div></div>
+                <span>{day.day}</span>
+              </div>
+            {/each}
+          </div></div>
+          <p class="chart-note">Day numbers start at 0. Exact quantities and cumulative backlog appear in the table below.</p>
         </div>
         <div class="panel table-panel"><h2>Daily outcomes</h2><div class="table-wrap"><table><thead><tr><th>DAY</th><th>DEMAND</th><th>BASELINE FULFILLED</th><th>DISRUPTED FULFILLED</th><th>BASELINE BACKLOG</th><th>DISRUPTED BACKLOG</th></tr></thead><tbody>
           {#each result.baseline.daily as day, i (day.day)}
@@ -176,6 +208,16 @@
   .metric{padding:24px}.metric span{display:block;font-size:10px;font-weight:750;letter-spacing:1px;color:#7c8b9d}.metric strong{display:block;font-size:28px;margin:12px 0 5px}.metric small{color:#8190a2;font-size:11px}
   .table-panel{padding:24px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;background:#f8fafc;color:#8291a4;font-size:10px;letter-spacing:.5px;white-space:nowrap}td,th{padding:14px;border-bottom:1px solid #edf0f4}
   .notes{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}.notes .panel{padding:24px}li{color:#63788d;font-size:12px;line-height:1.7;margin:8px 0}.error{color:#a33232;margin:15px 0}.message{padding:30px}
+  .capacity-summary{border:1px solid #dce6ef;background:#f5f9fc;padding:15px 18px;border-radius:6px;margin-bottom:20px;display:grid;gap:7px;font-size:12px;color:#49637d}
+  .capacity-summary strong{color:#1d4468}.capacity-summary p{font-size:12px}
+  .interpretation,.chart-panel{padding:24px;margin-bottom:20px}.interpretation{border-left:3px solid #3879b7}
+  .chart-key{display:flex;gap:20px;margin:17px 0;font-size:12px;color:#64778b}.chart-key span{display:flex;align-items:center;gap:7px}.chart-key i{display:inline-block;width:12px;height:12px;border-radius:2px}
+  .baseline-key,.baseline-bar{background:#4286bb}.disrupted-key,.disrupted-bar{background:#173c60}
+  .chart-scroll{overflow-x:auto}.chart-grid{display:flex;gap:8px;align-items:end;min-width:max-content;height:190px;padding:8px 0 0;border-bottom:1px solid #dfe6ee}
+  .chart-day{width:35px;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:end;gap:7px;font-size:10px;color:#6b7b8e}
+  .bar-pair{height:150px;width:100%;display:flex;align-items:end;justify-content:center;gap:3px}
+  .chart-bar{width:12px;min-height:0;border-radius:3px 3px 0 0}
+  .chart-note{margin-top:12px;font-size:11px}
   @media(max-width:1000px){.fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:700px){.scenario{padding:24px 16px}.heading,.panel-title,.form-bottom{align-items:flex-start;flex-direction:column}.fields{grid-template-columns:1fr}.metrics,.notes{grid-template-columns:1fr}.metric{padding:18px}.tag{white-space:normal}}
 </style>
