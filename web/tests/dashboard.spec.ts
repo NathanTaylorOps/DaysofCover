@@ -131,3 +131,34 @@ test("supports keyboard-only filtering, search reset and element inspection", as
   await expect(supplier).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("complementary", { name: "Element inspector" }).getByRole("heading", { name: "Primary supplier" })).toBeVisible();
 });
+
+test("runs an illustrative bounded simulation without disturbing exposure", async ({ page }) => {
+  const example = {
+    network: { base_currency: "AUD", nodes: [], lanes: [], parts: [], skus: [], customers: [] },
+    config: {
+      plant_node_id: "demo_plant", sku_id: "demo_sku", component_part_id: "demo_component",
+      initial_component_units: 200, initial_finished_units: 5, daily_demand_units: 5,
+      horizon_days: 7, production_capacity_per_week: 70, disruption_start_day: 0,
+      disruption_duration_days: 7, disruption_severity_fraction: 1, seed: 42
+    }
+  };
+  let posted: unknown = null;
+  await page.route("**/api/example/simulation/request", route => route.fulfill({ json: example }));
+  await page.route("**/api/simulation/bounded", async route => {
+    posted = route.request().postDataJSON();
+    await route.fulfill({ json: {
+      dataset: "User-supplied network", synthetic: false, element_id: "demo_plant", horizon_days: 7, seed: 42,
+      baseline: { total_demand_units: 35, total_fulfilled_units: 15, service_fraction: 15 / 35, daily: [{ day: 0, demand_units: 5, fulfilled_units: 5, backlog_units: 0 }] },
+      disrupted: { total_demand_units: 35, total_fulfilled_units: 5, service_fraction: 5 / 35, daily: [{ day: 0, demand_units: 5, fulfilled_units: 5, backlog_units: 0 }] },
+      fulfillment_delta_units: -10, assumptions: ["Deterministic demand"], limitations: ["Single component"]
+    } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Scenario comparison/ }).click();
+  await expect(page.getByRole("heading", { name: "Scenario comparison" })).toBeVisible();
+  await page.getByRole("button", { name: "Run comparison" }).click();
+  await expect(page.getByRole("region", { name: "Scenario results" })).toContainText("-10 units");
+  expect((posted as { config: { horizon_days: number } }).config.horizon_days).toBe(7);
+  await page.getByRole("button", { name: /Network exposure/ }).click();
+  await expect(page.getByRole("heading", { name: "Structural exposure" })).toBeVisible();
+});
