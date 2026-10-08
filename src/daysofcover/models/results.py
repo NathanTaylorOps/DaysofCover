@@ -27,3 +27,36 @@ class Result(StrictModel):
     replications: int
     scenario_content_hash: str
     summary: ResultSummary
+
+
+class DailyOutcome(StrictModel):
+    """Observed daily demand, fulfilment and outstanding backlog."""
+
+    day: int
+    demand_units: float
+    fulfilled_units: float
+    backlog_units: float
+
+
+class RunOutcome(StrictModel):
+    """One simulation run with day-level evidence."""
+
+    total_demand_units: float
+    total_fulfilled_units: float
+    service_fraction: float
+    daily: list[DailyOutcome]
+
+
+class ScenarioComparison(StrictModel):
+    """Matched baseline and disruption results with explicit caveats."""
+
+    dataset: str
+    synthetic: bool
+    element_id: str
+    horizon_days: int
+    seed: int
+    baseline: RunOutcome
+    disrupted: RunOutcome
+    fulfillment_delta_units: float
+    assumptions: list[str]
+    limitations: list[str]
