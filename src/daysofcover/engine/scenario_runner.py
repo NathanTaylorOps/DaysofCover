@@ -75,8 +75,10 @@ def compare_bounded_scenario(network: Network, config: BoundedScenarioInput) -> 
     def run(disrupted: bool) -> RunOutcome:
         state = NetworkState.from_network(network)
         plant_idx = state.node_index(config.plant_node_id)
-        state.on_hand[plant_idx, state.part_index(config.component_part_id)] = config.initial_component_units
-        state.finished_on_hand[plant_idx, state.sku_index(config.sku_id)] = config.initial_finished_units
+        component_idx = state.part_index(config.component_part_id)
+        state.on_hand[plant_idx, component_idx] = config.initial_component_units
+        sku_idx = state.sku_index(config.sku_id)
+        state.finished_on_hand[plant_idx, sku_idx] = config.initial_finished_units
         shipments = NetworkShipments.from_network(network)
         queue = ProductionQueue()
         daily: list[DailyOutcome] = []
