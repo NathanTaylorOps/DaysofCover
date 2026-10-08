@@ -1,42 +1,16 @@
-"""Per-shipment in-transit records, generalised across every lane and part.
+"""Track in-transit shipments by lane and commodity.
 
-Session 7's :mod:`daysofcover.engine.pipeline` proved the per-unit record
-shape (an order's dispatch day and, once drawn, its arrival day) on a
-single implicit lane. This module is where that shape gets threaded
-through every real lane in a network, and where the build plan's rule
-that session's single pipeline never had to choose between gets
-implemented literally: "Shipments on a lane are FIFO (no crossing) unless
-allow_crossing; lognormal lead times are drawn per order."
+Each shipment records dispatch and arrival timing. Independent lognormal
+lead-time draws determine arrival dates, subject to the lane's crossing
+policy. FIFO lanes prevent a later shipment from arriving before an
+earlier shipment of the same commodity; crossing-enabled lanes permit
+arrival order to differ from dispatch order.
 
-Each lane's shipments queue independently per part: a FIFO lane (the
-default, ``allow_crossing=False``) still draws an independent lognormal
-lead time for every shipment, but the *arrival order* is constrained --
-a shipment can never be recorded as arriving before the one placed ahead
-of it on the same lane and part, even when its own draw would have put it
-there sooner. ``allow_crossing`` lifts that constraint: shipments arrive
-whenever their own draw says to, independent of placement order, which is
-exactly session 7's min-heap design generalised from one pipeline to one
-per (lane, part).
-
-BOM-driven production, the allocation and split rules, and the
-replication runner all still lie ahead; this module only carries goods
-in motion on a single lane from a placed order to an arrival day.
-
-Session 20 adds the one thing every shipment placed on a lane has
-always been subject to but nothing has ever enforced: the lane's own
-``capacity_per_week`` (a hard weekly cap on total quantity shipped, on
-every lane) and its optional ``moq`` (a minimum order quantity below
-which a supplier will not ship at all). Both are schema fields
-(:class:`daysofcover.models.network.Lane`) that predate this module
-but were never read anywhere in the engine until now. Capacity is
-tracked inside :class:`LaneShipments` itself, as a side effect of
-:meth:`LaneShipments.ship`, because every unit shipped on a lane
-consumes that lane's capacity regardless of which caller placed the
-order -- it does not belong to any one caller to track. :func:`cap_
-order_quantity` is the pure decision of how much of a *desired* order
-actually gets placed against those two limits, kept separate from
-``ship`` so a caller can decide not to order at all when the capped
-result is zero, rather than placing a zero-quantity shipment.
+Lane shipment records also enforce the configured weekly capacity and
+minimum order quantity. Capacity consumption is tracked centrally by the
+lane so all callers share the same limit. The separate
+`cap_order_quantity` helper determines whether a proposed shipment can
+be placed without creating zero-quantity or sub-MOQ orders.
 """
 
 from __future__ import annotations
