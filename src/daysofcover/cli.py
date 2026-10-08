@@ -101,10 +101,10 @@ def cover(
     For each element: the AND/OR structural screen's convergence
     fraction ("structure says") next to the cover LP's own days-of-cover
     ("LP cover") -- the analytical distinction being that these two
-    numbers often disagree, and cover is the one that matters (a 100%
-    structural chokepoint that six weeks of stock absorbs easily versus
-    a low-convergence single-source part with two weeks of cover). Sorted
-    by cover ascending: the shortest real runway first.
+    numbers can disagree because structural reachability ignores stock and
+    capacity. LP cover is an approximation conditional on starting inventory
+    and other assumptions, not a day-by-day simulation. Results are sorted
+    by finite LP-estimated cover ascending.
     """
     target = path or DEFAULT_EXAMPLE
     try:
