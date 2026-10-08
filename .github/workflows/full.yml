@@ -23,6 +23,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend:
+    name: Svelte types, accessibility and production build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Svelte and TypeScript checks
+        run: npm run check
+      - name: Build frontend
+        run: npm run build
+
   validation:
     name: validation tier
     runs-on: ubuntu-24.04
