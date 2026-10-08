@@ -1450,3 +1450,92 @@ def test_multiday_shared_component_ledger_with_competing_skus() -> None:
         assert np.isclose(float(state.finished_backlog[plant].sum()) + total_met, total_demand)
         assert np.all(state.on_hand >= -1e-8)
         assert np.all(state.finished_on_hand >= -1e-8)
+
+
+def test_lane_disruption_holds_overdue_shipment_until_reopening() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    rng = np.random.default_rng(seed=42)
+    shipments.ship(lane_id="lane-1", part_id="part-a", quantity=21.0, order_day=0, rng=rng)
+    disruption = Disruption(
+        element_id="lane-1", start_day=1, severity_fraction=1.0, duration_days=4
+    )
+    scenario = Scenario(id="lane-recovery", name="Lane recovery", disruptions=[disruption], seed=1)
+    outage = DisruptionState.from_scenario(scenario, network=network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    total_received = 0.0
+    for day in range(8):
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id="lane-1",
+            sku_specs=[],
+            current_day=day,
+            disruption_state=outage,
+        )
+        total_received += report.components_received
+        outstanding = shipments.outstanding_at_node(node_id="plant-1", part_id="part-a")
+        assert np.isclose(total_received + outstanding, 21.0)
+        assert np.isclose(float(state.on_hand[plant, part]), total_received)
+        if day < 5:
+            assert report.components_received == 0.0
+            assert outstanding == 21.0
+        elif day == 5:
+            assert report.components_received == 21.0
+            assert outstanding == 0.0
+        else:
+            assert report.components_received == 0.0
+
+
+def test_plant_recovery_ramp_preserves_component_and_wip_ledger() -> None:
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    sku = state.sku_index("sku-a")
+    state.on_hand[plant, part] = 100.0
+    queue = ProductionQueue()
+    disruption = Disruption(
+        element_id="plant-1",
+        start_day=1,
+        severity_fraction=1.0,
+        duration_days=2,
+        ramp_days=4,
+    )
+    scenario = Scenario(id="plant-ramp", name="Plant ramp", disruptions=[disruption], seed=1)
+    outage = DisruptionState.from_scenario(scenario, network=network)
+    expected_started = [10.0, 0.0, 0.0, 2.0, 5.0, 7.0, 10.0, 10.0]
+    total_started = 0.0
+    total_completed = 0.0
+    for day, expected in enumerate(expected_started):
+        spec = SkuProductionSpec(
+            finished_sku_id="sku-a",
+            bom=[BOMLine(part_id="part-a", quantity=1.0)],
+            capacity_per_week=70.0,
+            batch_size=1.0,
+            production_lead_time_days=2.0,
+            orders=[],
+            production_queue=queue,
+        )
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id=None,
+            sku_specs=[spec],
+            current_day=day,
+            disruption_state=outage,
+        )
+        item = report.sku_reports[0]
+        assert item.production_started == expected
+        total_started += item.production_started
+        total_completed += item.finished_goods_completed
+        assert np.isclose(float(state.on_hand[plant, part]) + total_started, 100.0)
+        assert np.isclose(queue.outstanding() + total_completed, total_started)
+        assert np.isclose(float(state.finished_on_hand[plant, sku]), total_completed)
