@@ -1,4 +1,4 @@
-# Render Blueprint for the Stage 0 placeholder deploy.
+# Render Blueprint for the hosted technical preview.
 #
 # Render pulls the image CI builds and pushes to GHCR on every push to
 # main (see .github/workflows/fast.yml's `image` job) -- there is no
@@ -6,10 +6,8 @@
 # Render needs a registry credential configured in its dashboard) for
 # this to pull without authentication.
 #
-# This is Stage 0 only: one service, no persistence, no custom domain.
-# The static-SPA-plus-separate-API split described in the build plan's
-# "Hosted demo" decision lands once the real UI exists (Stage 6+); until
-# then this one service serves both the placeholder page and /health.
+# Single stateless service hosting the current preview and /health.
+# Scenario analysis endpoints and a complete decision interface are not yet deployed.
 services:
   - type: web
     name: daysofcover

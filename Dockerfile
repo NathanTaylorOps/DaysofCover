@@ -1,11 +1,7 @@
-# Days of Cover -- Stage 0 image.
-#
-# Two stages: build the Svelte placeholder page with Node (never installed
-# on the dev machine -- see the build plan's "Machine" note), then install
-# the Python package with that build baked in as static files. Nothing in
-# here is what a real release looks like yet -- no engine, no job runner,
-# no real UI -- this exists so `docker run` serves a real page with zero
-# toolchain and Render has something to pull (Stage 0 acceptance criteria).
+# Days of Cover deployment image.
+# Build the Svelte technical preview and package it alongside the Python
+# application. The container serves static files and the health endpoint;
+# scenario-execution HTTP endpoints are not yet implemented.
 
 # ---- build the web front end ----
 FROM node:22-slim AS webbuild

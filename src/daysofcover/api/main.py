@@ -1,10 +1,9 @@
-"""Stage 0 API skeleton.
+"""Hosted preview API and static application entry point.
 
-Just enough to satisfy the Stage 0 acceptance criteria: the Docker image
-serves a placeholder page with zero toolchain, and the Render skeleton
-answers ``/health`` as JSON. This is **not** the Stage 5 API (job runner,
-``/runs``, caps, rate limiting, SSE progress) -- that is built once the
-engine (Stage 1) exists to actually run something.
+The Docker image serves the Svelte technical preview and exposes a health
+endpoint. Scenario execution, bounded job processing and result reporting
+are not yet exposed as HTTP endpoints, even though modelling components
+exist in the Python package.
 
 ``/health`` is checked before any explicit route registration order
 matters here: FastAPI/Starlette matches an exact path before it falls

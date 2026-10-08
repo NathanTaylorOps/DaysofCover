@@ -1,9 +1,8 @@
-"""Schema v0: fixes-menu options for the Stage 7 optimizer.
+"""Schema for proposed supply-chain mitigation actions.
 
-Defined now, alongside the rest of schema v0, because ``MitigationOption``
-is referenced by the network/scenario layer's documentation and it is
-cheap to get the shape right early. The MILP itself (``optimise/menu.py``,
-``optimise/milp.py``) is Stage 7 work.
+The data model defines mitigation categories and cost/capacity inputs.
+It does not implement a mitigation-selection optimiser; the corresponding
+MILP and decision workflow remain future development.
 """
 
 from __future__ import annotations
