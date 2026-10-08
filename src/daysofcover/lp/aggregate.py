@@ -165,6 +165,7 @@ class _ResolvedNetwork:
     lanes_out_of: dict[str, tuple[str, ...]]
     node_capacity_per_day: dict[str, float]
     lane_capacity_per_day: dict[str, float]
+    lane_lead_time_days: dict[str, float]
     plant_node_ids: tuple[str, ...]
     part_ids: tuple[str, ...]
     sku_ids: tuple[str, ...]
@@ -257,6 +258,7 @@ def _resolve(network: Network, *, removed_element_id: str | None) -> _ResolvedNe
         lanes_out_of={k: tuple(v) for k, v in lanes_out_of.items()},
         node_capacity_per_day=node_capacity_per_day,
         lane_capacity_per_day=lane_capacity_per_day,
+        lane_lead_time_days={ln.id: ln.lead_time_days_median for ln in live_lanes},
         plant_node_ids=tuple(n.id for n in live_nodes if n.type == NodeType.PLANT),
         part_ids=tuple(p.id for p in network.parts),
         sku_ids=tuple(s.id for s in network.skus),
@@ -374,6 +376,10 @@ def _build(
 ) -> tuple[_LPBuilder, _Columns]:
     """Every column and row shared by the impact, cover and buffer LPs.
 
+    Fixed-horizon lane flows are disabled when median lead time is at
+    least the horizon; the aggregate model still ignores dispatch timing
+    and cannot represent arrivals within a horizon in daily detail.
+
     ``t_fixed`` is the horizon in days for the impact and buffer LPs;
     ``None`` means the cover LP, where T is a column in its own right
     (:attr:`_Columns.t`) instead of a given number. ``buffer=True`` adds
@@ -398,8 +404,20 @@ def _build(
             for commodity in commodities
         }
 
+    # A newly dispatched shipment cannot arrive within a fixed horizon
+    # that ends at or before its median transit time. This conservative
+    # cutoff does not apply to pre-existing in-transit stock, which is
+    # already included in starting_inventory at its destination.
     x_cols: dict[tuple[str, CommodityKey], int] = {
-        (lane_id, commodity): b.add_column()
+        (lane_id, commodity): b.add_column(
+            upper=(
+                0.0
+                if t_fixed is not None
+                and resolved.lane_lead_time_days[lane_id] >= t_fixed
+                and resolved.lane_lead_time_days[lane_id] > 0
+                else math.inf
+            )
+        )
         for lane_id in resolved.lane_ids
         for commodity in commodities
     }
