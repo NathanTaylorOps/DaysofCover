@@ -71,3 +71,20 @@ test("fits narrow mobile screens without page-wide horizontal scrolling", async 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(overflow).toBe(false);
 });
+
+test("explains hidden inspector selection and restores it when filters clear", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "N1", exact: true }).click();
+  await page.getByRole("button", { name: "Lanes", exact: true }).click();
+  await expect(page.getByText("The selected element is hidden by the current filters.")).toBeVisible();
+  await page.getByRole("button", { name: "clear filters", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Primary supplier" })).toBeVisible();
+});
+
+test("offers a recovery action for searches with no matching elements", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("textbox", { name: "Search network elements" }).fill("no-such-element");
+  await expect(page.getByText("No matching elements.")).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "N1", exact: true })).toBeVisible();
+});
