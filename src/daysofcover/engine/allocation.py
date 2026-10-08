@@ -55,6 +55,63 @@ def allocate_by_backlog_proportion(
     }
 
 
+def allocate_batch_aware_components(
+    *,
+    available_quantity: float,
+    requested_by_sku: dict[str, float],
+    batch_component_by_sku: dict[str, float],
+    backlog_by_sku: dict[str, float],
+    margin_by_sku: dict[str, float],
+    rule: str,
+) -> dict[str, float]:
+    """Allocate complete component batches without discarding unusable shares.
+
+    First honour the selected policy's allocation, rounded down to complete
+    batches. Redistribute the uncommitted balance to eligible SKUs in stable
+    priority order, never exceeding their requested component quantities.
+    """
+    import math
+
+    if rule == "margin_priority":
+        target = allocate_by_margin_priority(
+            available_quantity=available_quantity,
+            requested_by_sku=requested_by_sku,
+            margin_by_sku=margin_by_sku,
+        )
+        order = sorted(requested_by_sku, key=lambda sku: (-margin_by_sku.get(sku, 0.0), sku))
+    else:
+        target = allocate_by_backlog_proportion(
+            available_quantity=available_quantity,
+            requested_by_sku=requested_by_sku,
+            backlog_by_sku=backlog_by_sku,
+        )
+        order = sorted(requested_by_sku, key=lambda sku: (-backlog_by_sku.get(sku, 0.0), sku))
+
+    allocation = {}
+    for sku, requested in requested_by_sku.items():
+        batch = batch_component_by_sku[sku]
+        allocation[sku] = min(
+            requested,
+            math.floor((target[sku] + 1e-9 * batch) / batch) * batch,
+        ) if batch > 0 else 0.0
+
+    remaining = max(0.0, available_quantity - sum(allocation.values()))
+    for sku in order:
+        batch = batch_component_by_sku[sku]
+        if batch <= 0:
+            continue
+        headroom = max(0.0, requested_by_sku[sku] - allocation[sku])
+        batches = min(
+            math.floor((remaining + 1e-9 * batch) / batch),
+            math.floor((headroom + 1e-9 * batch) / batch),
+        )
+        if batches > 0:
+            quantity = batches * batch
+            allocation[sku] += quantity
+            remaining -= quantity
+    return allocation
+
+
 def allocate_by_margin_priority(
     *,
     available_quantity: float,
