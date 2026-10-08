@@ -1,7 +1,7 @@
 # Days of Cover deployment image.
 # Build the Svelte technical preview and package it alongside the Python
-# application. The container serves static files and the health endpoint;
-# scenario-execution HTTP endpoints are not yet implemented.
+# application. The container serves static files, the health endpoint,
+# illustrative example endpoints and the bounded synchronous simulation API.
 
 # ---- build the web front end ----
 FROM node:22-slim AS webbuild
