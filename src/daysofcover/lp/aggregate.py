@@ -69,10 +69,9 @@ implementer's call, same as the max-T formulation itself:
   is already a cost) and ``holding_cost_rate * price * (1 -
   margin_fraction)`` for a SKU (its *cost* to hold, not its selling
   price, since a margin is revenue the SKU hasn't earned yet by sitting
-  in a warehouse). A node with no ``holding_cost_rate`` at all gets a
-  zero coefficient there -- no cost data, no penalty, and the solver is
-  free to place buffer there for nothing, which is a limitation to note
-  rather than a hidden bug.
+  in a warehouse). A node with no ``holding_cost_rate`` causes buffer optimisation to
+  reject the request rather than silently treating missing cost data
+  as free storage.
 
 Node and lane capacities are per day (``capacity_per_week / 7``); a
 node with no ``capacity_per_week`` at all has no capacity row (nothing
@@ -588,6 +587,9 @@ def solve_buffer(
 ) -> BufferResult:
     """The buffer LP: minimise holding cost on added inventory, subject to zero lost sales.
 
+    All active nodes must specify ``holding_cost_rate``; otherwise the
+    solver raises ValueError instead of recommending free storage.
+
     ``horizon_days`` plays the same role as the impact LP's own
     ``horizon_days`` -- normally ``recovery_e(P80)``, a caller-supplied
     estimate. ``added_inventory`` only lists the (node, commodity) pairs
@@ -597,6 +599,16 @@ def solve_buffer(
     if not math.isfinite(horizon_days) or horizon_days < 0:
         raise ValueError("horizon_days must be a finite, non-negative number")
     resolved = _resolve(network, removed_element_id=removed_element_id)
+    missing_rates = sorted(
+        node_id
+        for node_id in resolved.node_ids
+        if node_id not in resolved.holding_cost_rate_by_node
+    )
+    if missing_rates:
+        raise ValueError(
+            "buffer optimisation requires holding_cost_rate for every active node; "
+            "missing: " + ", ".join(missing_rates)
+        )
     builder, columns = _build(
         resolved, starting_inventory=starting_inventory, t_fixed=horizon_days, buffer=True
     )
