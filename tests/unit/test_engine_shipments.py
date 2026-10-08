@@ -186,3 +186,58 @@ def test_capacity_remaining_tracks_usage_within_a_week_and_resets_across_weeks()
     # day 7 starts a new week (day 6 // 7 == 0, day 7 // 7 == 1): the used-
     # this-week counter resets and the full weekly capacity is back
     assert lane.capacity_remaining(current_day=7) == 1000.0
+
+
+@pytest.mark.parametrize("allow_crossing", [False, True])
+def test_multiday_shipments_conserve_fractional_quantities(allow_crossing: bool) -> None:
+    """Daily arrivals plus remaining transit must equal all dispatched stock."""
+    lane = _crossing_lane() if allow_crossing else _fifo_lane()
+    shipments = LaneShipments(lane=lane)
+    rng = np.random.default_rng(seed=91)
+    dispatched = 0.0
+    received = 0.0
+
+    for day in range(45):
+        if day < 12:
+            quantity = (day + 1) / 10.0
+            shipments.ship(part_id="part-a", quantity=quantity, order_day=day, rng=rng)
+            dispatched += quantity
+
+        received += shipments.receive(part_id="part-a", current_day=day)
+        outstanding = shipments.outstanding(part_id="part-a")
+        assert received + outstanding == pytest.approx(dispatched)
+        assert received >= 0.0
+        assert outstanding >= 0.0
+
+    assert received == pytest.approx(dispatched)
+    assert shipments.outstanding(part_id="part-a") == pytest.approx(0.0)
+
+
+def test_network_inbound_outstanding_reconciles_across_parallel_lanes() -> None:
+    """Inbound inventory position includes each lane once, without consuming it."""
+    network = Network(
+        base_currency="AUD",
+        nodes=[
+            Node(id="node-a", name="Supplier", type=NodeType.SUPPLIER, region="AU"),
+            Node(id="node-b", name="Plant", type=NodeType.PLANT, region="AU"),
+        ],
+        lanes=[_fifo_lane(), _crossing_lane()],
+        parts=[],
+    )
+    shipments = NetworkShipments.from_network(network)
+    rng = np.random.default_rng(seed=17)
+    shipments.ship(lane_id="lane-1", part_id="part-a", quantity=12.5, order_day=0, rng=rng)
+    shipments.ship(lane_id="lane-2", part_id="part-a", quantity=7.25, order_day=0, rng=rng)
+
+    assert shipments.outstanding_at_node(node_id="node-b", part_id="part-a") == 19.75
+    assert shipments.outstanding_at_node(node_id="node-a", part_id="part-a") == 0.0
+    assert shipments.outstanding_at_node(node_id="node-b", part_id="part-b") == 0.0
+
+    received = 0.0
+    for day in range(45):
+        for lane_id in ("lane-1", "lane-2"):
+            received += shipments.receive(lane_id=lane_id, part_id="part-a", current_day=day)
+        remaining = shipments.outstanding_at_node(node_id="node-b", part_id="part-a")
+        assert received + remaining == pytest.approx(19.75)
+
+    assert received == pytest.approx(19.75)
