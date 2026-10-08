@@ -530,9 +530,7 @@ def test_multiday_distribution_conserves_stock_across_nodes_and_transit() -> Non
             rng=rng,
         )
         on_hand = float(state.finished_on_hand.sum())
-        in_transit = sum(
-            lane.outstanding(part_id=sku_id) for lane in shipments.lanes.values()
-        )
+        in_transit = sum(lane.outstanding(part_id=sku_id) for lane in shipments.lanes.values())
         assert on_hand + in_transit == pytest.approx(90.0)
         assert np.all(state.finished_on_hand >= -1e-8)
         if day == 0:
