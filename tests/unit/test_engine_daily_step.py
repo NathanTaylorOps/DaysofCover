@@ -1042,3 +1042,71 @@ def test_customer_absent_from_the_tree_falls_back_to_the_plant_directly() -> Non
 
     assert report.sku_reports[0].demand_met == 10.0
     assert state.finished_on_hand[plant, sku_idx] == 40.0
+
+
+def test_shared_component_surplus_survives_multiple_sku_production_days() -> None:
+    """Daily SKU allocations must not overwrite unallocated physical inventory."""
+    network = _two_sku_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    state.on_hand[plant, part] = 200.0
+    bom = [BOMLine(part_id="part-a", quantity=1.0)]
+    specs = [
+        SkuProductionSpec(
+            finished_sku_id=sku_id,
+            bom=bom,
+            capacity_per_week=70.0,
+            batch_size=1.0,
+            production_lead_time_days=3.0,
+            orders=[],
+            production_queue=ProductionQueue(),
+        )
+        for sku_id in ("sku-a", "sku-b")
+    ]
+
+    for day, expected_remaining in ((0, 180.0), (1, 160.0), (2, 140.0)):
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id=None,
+            sku_specs=specs,
+            current_day=day,
+        )
+        assert [sku.production_started for sku in report.sku_reports] == [10.0, 10.0]
+        assert state.on_hand[plant, part] == expected_remaining
+
+
+def test_fractional_batch_consumption_preserves_unallocated_components() -> None:
+    """Fractional batches consume only their BOM requirements."""
+    network = _two_sku_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    state.on_hand[plant, part] = 100.0
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=2.0)],
+        capacity_per_week=73.5,
+        batch_size=0.5,
+        production_lead_time_days=3.0,
+        orders=[],
+        production_queue=ProductionQueue(),
+    )
+
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=[spec],
+        current_day=0,
+    )
+
+    assert report.sku_reports[0].production_started == 10.5
+    assert state.on_hand[plant, part] == 79.0
