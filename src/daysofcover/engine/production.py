@@ -1,32 +1,13 @@
-"""BOM-driven production at a plant, capped by capacity and the scarcest part.
+"""BOM-constrained production planning and completion tracking.
 
-The build plan states this in one sentence: "Production at the plant
-consumes components per BOM, is capped by plant capacity and by the
-scarcest component, and has a one-week lead and a batch size." This
-module is that sentence, split into its three independently testable
-pieces:
+Production feasibility is limited by the plant's daily capacity,
+available bill-of-materials components and batch-size requirements.
+Component consumption is applied separately from the feasibility
+calculation. A production queue tracks the fixed lead time between
+starting a batch and receiving finished goods.
 
-- :func:`feasible_production_units` -- how many units of one SKU could
-  start production today, before anything is actually consumed. Three
-  caps apply, and the smallest wins: the plant's own daily capacity, the
-  scarcest BOM component on hand, and rounding down to a whole number of
-  batches.
-- :func:`consume_components` -- what production of that many units
-  actually costs, in components taken off the shelf.
-- :class:`ProductionQueue` -- the lead time between starting a batch and
-  it becoming finished goods. Unlike a lane's shipments
-  (:mod:`daysofcover.engine.shipments`), a SKU's production lead time
-  (:attr:`daysofcover.models.network.SKU.production_lead_time_days`) is a
-  fixed schema field, not a distribution drawn per batch, so a
-  later-started batch can never finish before an earlier one -- there is
-  nothing for FIFO to enforce here, only a plain queue.
-
-Allocation across SKUs when a shared component is scarce, and across
-customers when finished goods are scarce, are their own rules the build
-plan states separately and are not this module's job; here, one SKU's
-production is checked and started in isolation, against whatever
-component quantities the caller has already decided to make available to
-it.
+Allocation of shared components across SKUs and allocation of finished
+goods across customers are handled by separate policy modules.
 """
 
 from __future__ import annotations

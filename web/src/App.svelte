@@ -22,12 +22,12 @@
 <main>
   <h1>Days of Cover</h1>
   <p>
-    Supply chain stress test: how long can you keep shipping if a
-    supplier, port or route goes down, and what is the cheapest fix.
+    Supply-chain resilience modelling for operational decisions.
   </p>
   <p class="placeholder-note">
-    Technical preview: the modelling engine and command-line tools are in
-    development. Interactive disruption analysis is not yet available here.
+    Technical preview. The Python modelling and command-line capabilities are
+    available in the repository; interactive scenario analysis is not yet
+    connected to this web interface.
   </p>
 
   <button onclick={checkHealth}>Check API health</button>
