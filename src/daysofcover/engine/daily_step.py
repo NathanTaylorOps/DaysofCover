@@ -357,7 +357,13 @@ def advance_one_day(
             )
             for line in spec.bom:
                 idx = state.part_index(line.part_id)
-                state.on_hand[plant, idx] = updated[line.part_id]
+                if line.part_id == component_part_id and spec.finished_sku_id in allocated_component:
+                    # The allocation is a production budget, not the plant's
+                    # entire stock. Preserve stock that was not allocated.
+                    consumed = feasible * line.quantity
+                    state.on_hand[plant, idx] -= consumed
+                else:
+                    state.on_hand[plant, idx] = updated[line.part_id]
             spec.production_queue.start(
                 quantity=feasible,
                 start_day=current_day,
