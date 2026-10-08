@@ -332,3 +332,28 @@ def test_fixed_horizon_lp_rejects_invalid_horizons(horizon: float, solver_name: 
             horizon_days=horizon,
             starting_inventory={("n3", sku_key("sku-a")): 50.0},
         )
+
+
+def test_fixed_horizon_impact_does_not_teleport_stock_across_a_slow_lane() -> None:
+    network = _case_8_network()
+    # The plant has finished goods, but the only route to the customer
+    # takes one day. Half a day of demand is five units.
+    inventory = {("plant-1", sku_key("sku-a")): 10.0}
+    short = solve_impact(
+        network,
+        removed_element_id="lane-in",
+        horizon_days=0.5,
+        starting_inventory=inventory,
+    )
+    assert short.status == "optimal"
+    assert short.lost_sales_by_customer_sku[("cust-1", "sku-a")] == 5.0
+
+    # A two-day horizon permits the pre-positioned plant stock to arrive.
+    longer = solve_impact(
+        network,
+        removed_element_id="lane-in",
+        horizon_days=2.0,
+        starting_inventory=inventory,
+    )
+    assert longer.status == "optimal"
+    assert longer.lost_sales_by_customer_sku[("cust-1", "sku-a")] == 10.0
