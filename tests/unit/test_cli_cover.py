@@ -20,7 +20,7 @@ def test_cover_ranks_every_node_and_lane_of_the_shipped_example() -> None:
 
     assert result.exit_code == 0
     assert "structure says" in result.output
-    assert "simulation says" in result.output
+    assert "aggregate LP" in result.output
     # the shipped example has 33 nodes and 33 lanes -- one ranked row each.
     ranked_rows = (
         result.output.count(" days\n")
