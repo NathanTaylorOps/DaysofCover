@@ -82,6 +82,7 @@ def compare_bounded_scenario(network: Network, config: BoundedScenarioInput) -> 
         shipments = NetworkShipments.from_network(network)
         queue = ProductionQueue()
         daily: list[DailyOutcome] = []
+        previous_backlog = 0.0
         for day in range(config.horizon_days):
             spec = SkuProductionSpec(
                 finished_sku_id=config.sku_id,
@@ -111,14 +112,17 @@ def compare_bounded_scenario(network: Network, config: BoundedScenarioInput) -> 
                 disruption_state=disruption if disrupted else None,
             )
             fulfilled = report.sku_reports[0].demand_met
+            backlog = float(state.finished_backlog[plant_idx, sku_idx])
+            expected_backlog = previous_backlog + config.daily_demand_units - fulfilled
+            if abs(backlog - expected_backlog) > 1e-7 * max(1.0, expected_backlog):
+                raise RuntimeError("daily fulfilment and backlog accounting diverged")
+            previous_backlog = backlog
             daily.append(
                 DailyOutcome(
                     day=day,
                     demand_units=config.daily_demand_units,
                     fulfilled_units=fulfilled,
-                    backlog_units=float(
-                        state.finished_backlog[plant_idx, state.sku_index(config.sku_id)]
-                    ),
+                    backlog_units=backlog,
                 )
             )
         demand = sum(item.demand_units for item in daily)
