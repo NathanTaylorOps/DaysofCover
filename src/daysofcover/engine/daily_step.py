@@ -292,7 +292,14 @@ def advance_one_day(
         component_line_by_sku[spec.finished_sku_id] = component_line
         unconstrained_units = feasible_production_units(
             capacity_per_week=spec.capacity_per_week * plant_capacity_fraction,
-            on_hand_by_part={line.part_id: _UNLIMITED for line in spec.bom},
+            on_hand_by_part={
+                line.part_id: (
+                    _UNLIMITED
+                    if line.part_id == component_part_id
+                    else float(state.on_hand[plant, state.part_index(line.part_id)])
+                )
+                for line in spec.bom
+            },
             bom=spec.bom,
             batch_size=spec.batch_size,
         )
