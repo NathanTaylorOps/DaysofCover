@@ -88,3 +88,24 @@ test("offers a recovery action for searches with no matching elements", async ({
   await page.getByRole("button", { name: "Clear filters", exact: true }).first().click();
   await expect(page.getByRole("button", { name: "N1", exact: true })).toBeVisible();
 });
+
+test("keeps the dashboard usable when optional element metadata fails", async ({ page }) => {
+  await page.unroute("**/api/example/elements");
+  await page.route("**/api/example/elements", async (route) => {
+    await route.fulfill({ status: 503, body: "unavailable" });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toContainText("Element names are temporarily unavailable");
+  await expect(page.getByRole("button", { name: "N1", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "N1", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "N1" })).toBeVisible();
+});
+
+test("rejects invalid network counts rather than displaying misleading metrics", async ({ page }) => {
+  await page.unroute("**/api/example/exposure");
+  await page.route("**/api/example/exposure", async (route) => {
+    await route.fulfill({ json: { ...exposure, nodes: -1 } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("alert")).toContainText("Unexpected analysis response format");
+});
