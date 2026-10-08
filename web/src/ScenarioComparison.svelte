@@ -24,7 +24,8 @@
   let error = $state("");
   let aborter: AbortController | null = null;
 
-  const fields: { key: keyof Config; label: string; step: string; min: number; max: number }[] = [
+  type NumericConfigKey = Exclude<keyof Config, "plant_node_id" | "sku_id" | "component_part_id">;
+  const fields: { key: NumericConfigKey; label: string; step: string; min: number; max: number }[] = [
     { key: "initial_component_units", label: "Component inventory (units)", step: "1", min: 0, max: 1000000000 },
     { key: "initial_finished_units", label: "Finished inventory (units)", step: "1", min: 0, max: 1000000000 },
     { key: "daily_demand_units", label: "Daily demand (units)", step: "1", min: 0, max: 1000000000 },
