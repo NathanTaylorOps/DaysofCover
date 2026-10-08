@@ -58,7 +58,10 @@ async def limit_bounded_request_size(request: Request, call_next: Any) -> Any:
 
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type != "application/json":
-        return JSONResponse(status_code=415, content={"detail": "Content-Type must be application/json"})
+        return JSONResponse(
+            status_code=415,
+            content={"detail": "Content-Type must be application/json"},
+        )
 
     too_large = JSONResponse(
         status_code=413,
