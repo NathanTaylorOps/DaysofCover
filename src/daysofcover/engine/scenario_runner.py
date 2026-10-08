@@ -30,9 +30,9 @@ class BoundedScenarioInput(StrictModel):
     component_part_id: str
     initial_component_units: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
     initial_finished_units: float = Field(default=0, ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
-    daily_demand_units: float = Field(ge=0, allow_inf_nan=False)
+    daily_demand_units: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
     horizon_days: int = Field(ge=1, le=90)
-    production_capacity_per_week: float = Field(ge=0, allow_inf_nan=False)
+    production_capacity_per_week: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
     disruption_start_day: int = Field(ge=0)
     disruption_duration_days: float = Field(gt=0, le=90, allow_inf_nan=False)
     disruption_severity_fraction: float = Field(gt=0, le=1, allow_inf_nan=False)
