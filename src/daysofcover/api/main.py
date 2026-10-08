@@ -46,6 +46,10 @@ WEB_STATIC_DIR = Path(__file__).resolve().parent.parent / "web_static"
 
 app = FastAPI(title="daysofcover", version=__version__)
 
+BOUNDED_DEMO_REQUEST = (
+    Path(__file__).resolve().parent.parent / "data" / "examples" / "bounded_assembly_request.json"
+)
+
 EXAMPLE_NETWORK = (
     Path(__file__).resolve().parent.parent / "data" / "examples" / "moreton_marine" / "network.json"
 )
@@ -71,6 +75,21 @@ class ExposureReport(BaseModel):
 class SimulationRequest(StrictModel):
     network: dict[str, Any]
     config: BoundedScenarioInput
+
+
+@app.get("/api/example/simulation/request", response_model=SimulationRequest)
+def example_simulation_request() -> SimulationRequest:
+    """Return a supported, illustrative request for the bounded simulation API."""
+    return SimulationRequest.model_validate_json(BOUNDED_DEMO_REQUEST.read_text())
+
+
+@app.post("/api/example/simulation", response_model=ScenarioComparison)
+def example_simulation() -> ScenarioComparison:
+    """Run the bundled deterministic demonstration with illustrative assumptions."""
+    result = bounded_simulation(example_simulation_request())
+    return result.model_copy(
+        update={"dataset": "Illustrative Assembly Plant", "synthetic": True}
+    )
 
 
 @app.post("/api/simulation/bounded", response_model=ScenarioComparison)
