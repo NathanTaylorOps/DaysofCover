@@ -5,17 +5,17 @@
 
 ## Context
 
-The cover, impact and buffer LPs (per element, per scenario) and the fixes
-MILP need an LP/MILP solver. Candidates considered: Google OR-Tools (CBC or
+The cover, impact and buffer LPs (per element, per scenario) and the proposed mitigation-selection MILP require optimisation support. Candidates considered: Google OR-Tools (CBC or
 its own solvers), a direct HiGHS binding (`highspy`), and HiGHS through
 `scipy.optimize.linprog` / `scipy.optimize.milp`, which SciPy has shipped
 its own HiGHS interface for since SciPy 1.9.
 
 ## Decision
 
-Use HiGHS through `scipy.optimize.linprog` and `scipy.optimize.milp`, with
-`time_limit` and `mip_rel_gap` passed through on the MILP calls. No
-`highspy` or OR-Tools dependency in v1.
+Use HiGHS through SciPy's optimisation interfaces. The implemented
+coverage, impact and buffer models use `scipy.optimize.linprog`.
+`scipy.optimize.milp` is the selected interface for a future mitigation
+optimiser, which has not yet been implemented.
 
 Reasoning:
 
@@ -33,8 +33,7 @@ Reasoning:
 
 ## Consequences
 
-- LP and MILP construction code builds sparse matrices once per element or
-  scenario set and re-solves from scratch; there is no warm-start reuse
+- The LP construction code builds sparse matrices and re-solves from scratch; there is no warm-start reuse
   across the ~110 per-element LPs.
 - `mypy` treats `scipy.optimize` as unstubbed (SciPy ships no type stubs);
   `scipy-stubs` is added as a dev dependency to keep strict typing on the
