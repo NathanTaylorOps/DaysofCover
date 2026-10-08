@@ -44,7 +44,13 @@ WEB_STATIC_DIR = Path(__file__).resolve().parent.parent / "web_static"
 
 app = FastAPI(title="daysofcover", version=__version__)
 
-EXAMPLE_NETWORK = Path(__file__).resolve().parent.parent / "data" / "examples" / "moreton_marine" / "network.json"
+EXAMPLE_NETWORK = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "examples"
+    / "moreton_marine"
+    / "network.json"
+)
 
 
 class ExposureRow(BaseModel):
@@ -87,7 +93,10 @@ def example_exposure() -> ExposureReport:
         dataset="Moreton Marine Systems",
         synthetic=True,
         method="AND/OR bill-of-materials structural dependency screen",
-        limitations="Structural reachability only; excludes inventory, capacity, timing and financial impact.",
+        limitations=(
+            "Structural reachability only; excludes inventory, capacity, timing "
+            "and financial impact."
+        ),
         nodes=len(network.nodes),
         lanes=len(network.lanes),
         rows=rows,
