@@ -1,20 +1,17 @@
-"""Seeded generator for the Moreton Marine Systems example network.
+"""Generate the reproducible synthetic Moreton Marine Systems network.
 
-Everything here is synthetic: a fictional Brisbane marine-electronics
-maker, invented for this portfolio project (see the README this script
-writes alongside the network). Topology (which nodes and lanes exist) is
-hand-authored from the build plan's persona section, because that shape
-*is* the worked example this project is built around. What the seeded RNG
-actually controls is every numeric parameter hung off that shape: lane
-lead-time spread, capacity, unit cost, hazard rate profiles and severity,
-demand noise. Re-running this script with the same seed reproduces the
-same network byte-for-byte; a CI step (``full.yml``, added once the
-example-regeneration diff job lands) fails if the committed JSON drifts
-from what this script produces.
+The fictional Brisbane marine-electronics manufacturer provides a
+consistent example for testing and demonstrating supply-chain analysis.
+Network topology is explicitly defined; seeded random draws determine
+numeric parameters such as lead times, capacities, unit costs, hazard
+profiles and demand variability.
 
-Run directly to (re)write the committed example:
+Using the same seed produces the same example network. The committed
+fixture can be regenerated with:
 
     python -m daysofcover.data.generate
+
+All organisations, operating data and financial figures are synthetic.
 """
 
 from __future__ import annotations
