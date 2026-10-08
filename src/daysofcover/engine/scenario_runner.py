@@ -42,9 +42,7 @@ class BoundedScenarioInput(StrictModel):
         return self
 
 
-def compare_bounded_scenario(
-    network: Network, config: BoundedScenarioInput
-) -> ScenarioComparison:
+def compare_bounded_scenario(network: Network, config: BoundedScenarioInput) -> ScenarioComparison:
     """Compare paired runs with identical initial conditions and daily demand."""
     nodes = {node.id: node for node in network.nodes}
     skus = {sku.id: sku for sku in network.skus}
@@ -77,12 +75,8 @@ def compare_bounded_scenario(
     def run(disrupted: bool) -> RunOutcome:
         state = NetworkState.from_network(network)
         plant_idx = state.node_index(config.plant_node_id)
-        state.on_hand[plant_idx, state.part_index(config.component_part_id)] = (
-            config.initial_component_units
-        )
-        state.finished_on_hand[plant_idx, state.sku_index(config.sku_id)] = (
-            config.initial_finished_units
-        )
+        state.on_hand[plant_idx, state.part_index(config.component_part_id)] = config.initial_component_units
+        state.finished_on_hand[plant_idx, state.sku_index(config.sku_id)] = config.initial_finished_units
         shipments = NetworkShipments.from_network(network)
         queue = ProductionQueue()
         daily: list[DailyOutcome] = []
