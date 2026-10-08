@@ -32,7 +32,6 @@ from fastapi.staticfiles import StaticFiles
 from daysofcover import __version__
 from daysofcover.cli import DEFAULT_EXAMPLE
 from daysofcover.io.loaders import load_network
-from daysofcover.lp.aggregate import solve_cover
 from daysofcover.lp.structure import structural_convergence
 
 if sys.platform != "win32":
