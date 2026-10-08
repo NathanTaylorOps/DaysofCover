@@ -198,18 +198,10 @@ def test_state_chassis_is_sized_from_the_network_it_was_built_from(network: Netw
 
 @given(
     available_batches=st.integers(min_value=0, max_value=100),
-    batch_sizes=st.lists(
-        st.integers(min_value=1, max_value=12), min_size=3, max_size=3
-    ),
-    requests=st.lists(
-        st.integers(min_value=0, max_value=20), min_size=3, max_size=3
-    ),
-    backlogs=st.lists(
-        st.integers(min_value=0, max_value=100), min_size=3, max_size=3
-    ),
-    margins=st.lists(
-        st.integers(min_value=0, max_value=100), min_size=3, max_size=3
-    ),
+    batch_sizes=st.lists(st.integers(min_value=1, max_value=12), min_size=3, max_size=3),
+    requests=st.lists(st.integers(min_value=0, max_value=20), min_size=3, max_size=3),
+    backlogs=st.lists(st.integers(min_value=0, max_value=100), min_size=3, max_size=3),
+    margins=st.lists(st.integers(min_value=0, max_value=100), min_size=3, max_size=3),
     rule=st.sampled_from(["backlog_proportion", "margin_priority"]),
 )
 @settings(deadline=None)
@@ -224,8 +216,7 @@ def test_batch_allocation_conserves_stock_and_is_order_independent(
     """All allocated stock fits whole batches and is stable under SKU permutation."""
     batch_by_sku = dict(zip(_SKU_IDS, batch_sizes, strict=True))
     requested_by_sku = {
-        sku: batch_by_sku[sku] * count
-        for sku, count in zip(_SKU_IDS, requests, strict=True)
+        sku: batch_by_sku[sku] * count for sku, count in zip(_SKU_IDS, requests, strict=True)
     }
     backlog_by_sku = dict(zip(_SKU_IDS, backlogs, strict=True))
     margin_by_sku = dict(zip(_SKU_IDS, margins, strict=True))
