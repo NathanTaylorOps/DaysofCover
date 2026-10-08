@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from daysofcover import __version__
 from daysofcover.engine.scenario_runner import BoundedScenarioInput, compare_bounded_scenario
+from daysofcover.models.network import Network, StrictModel
 from daysofcover.models.results import ScenarioComparison
 from daysofcover.io.loaders import load_network
 from daysofcover.lp.structure import structural_convergence
@@ -66,21 +67,22 @@ class ExposureReport(BaseModel):
     rows: list[ExposureRow]
 
 
-@app.post("/api/example/simulation", response_model=ScenarioComparison)
-def example_simulation(config: BoundedScenarioInput) -> ScenarioComparison:
-    """Run a bounded inventory-aware plant disruption on the synthetic example.
+class SimulationRequest(StrictModel):
+    network: Network
+    config: BoundedScenarioInput
 
-    The caller must provide stock, demand and capacity assumptions. The
-    example dataset does not supply calibrated initial inventory levels.
+
+@app.post("/api/simulation/bounded", response_model=ScenarioComparison)
+def bounded_simulation(request: SimulationRequest) -> ScenarioComparison:
+    """Compare a bounded plant disruption on a caller-supplied network.
+
+    This endpoint does not use the Moreton Marine example because its SKUs
+    contain multi-component BOMs, unsupported by the bounded runner.
     """
-    network = load_network(EXAMPLE_NETWORK)
     try:
-        result = compare_bounded_scenario(network, config)
+        return compare_bounded_scenario(request.network, request.config)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return result.model_copy(
-        update={"dataset": "Moreton Marine Systems", "synthetic": True}
-    )
 
 
 @app.get("/api/example/exposure", response_model=ExposureReport)
