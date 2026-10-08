@@ -28,10 +28,8 @@ fire) on top of their group memberships.
 
 This is a Marshall-Olkin style construction: it gives positive correlation
 between failures without needing a copula, which is the structure used in
-Gao, Simchi-Levi, Teo and Yan (Operations Research 67(3), 2019) and is the
-best-supported correlation model in the supply chain disruption literature.
-No supply chain paper found in the research pass uses copulas for
-disruption arrivals.
+Gao, Simchi-Levi, Teo and Yan (Operations Research 67(3), 2019) and provides an interpretable representation of correlated disruptions.
+It avoids the need to estimate a full joint correlation matrix.
 
 `region` (geographic, one per node or lane, drives layout and lead-time
 parameters) is kept as a separate field from `hazard_group` (a sampling
@@ -45,12 +43,11 @@ uncorrelated events.
 - The sampler draws one event per hazard group per period, then rolls each
   member's hit probability, rather than one independent roll per element.
 - Rate inputs are shipped as template defaults with a source and a notes
-  field; the methodology page documents how to derive a rate from a
-  company's own incident log, but the tool does not run that estimator
-  itself.
-- Worst-case analysis (ADR-009) enumerates pairs across groups and triples
-  within a group, because within-group co-occurrence is far more likely
-  than an arbitrary pair of elements failing together.
+  field; incident-rate calibration from company records remains outside the
+  current implementation.
+- A future multi-element scenario screen can prioritise combinations
+  involving shared hazard groups; this prioritisation is not implemented
+  by the current structural screen.
 - The scenario schema carries named disruptions as an override on top of
   the sampler, so a specific story (e.g. "Cyclone Alfred closes Port of
   Brisbane for 9 days") can be authored directly without going through the
@@ -61,8 +58,7 @@ uncorrelated events.
 - **Independent per-element failure probability.** Simpler to implement and
   reason about, but cannot produce the correlated multi-failure scenarios
   that are the actual point of a stress test.
-- **Copula-based joint distribution over all elements.** Expressive, but no
-  surveyed supply chain disruption paper uses this, it requires specifying
+- **Copula-based joint distribution over all elements.** Expressive, but it requires specifying
   a full correlation structure with no obvious source data, and it does not
   map cleanly onto "which shared cause produced this event," which the
   attribution rule needs.

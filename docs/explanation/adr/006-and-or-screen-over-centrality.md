@@ -46,19 +46,18 @@ the product.
 - The first screen's headline finding is allowed to disagree between
   "structure" (this AND/OR screen, ranked by share of flow) and
   "simulation" (ranked by cover versus recovery time) — that disagreement
-  is the actual insight the tool surfaces, not a bug to reconcile away.
-  Example from the demo network: the Singapore transhipment hub is a
-  100%-convergence structural chokepoint that barely matters in practice
-  (a five-day closure is absorbed by six weeks of cover and an air
-  alternative), while a single-sourced module with two weeks of cover and
-  a 13-week recovery is the real exposure.
+  is a useful analytical distinction, not necessarily a modelling defect.
+  For example, a highly connected transport hub may be structurally
+  important yet have sufficient inventory cover for a short disruption,
+  while a less connected component source may present greater operational
+  exposure. Such conclusions require scenario-specific evidence.
 - The screen only needs the BOM, the supplier-path graph and per-pair
   value (price × volume); it needs no capacity, lead-time or hazard data,
   which is why it can run before any LP or simulation and cheaply narrow
   the set that gets the expensive treatment.
 - Because this pattern holds on any realistic BOM network with shared
-  parts, the demo network needs at most one time-boxed tuning session to
-  produce a clean story, not repeated hand-tuning against a moving target.
+  parts, synthetic examples should demonstrate the distinction without being
+  tuned to manufacture a predetermined result.
 
 ## Alternatives considered
 
