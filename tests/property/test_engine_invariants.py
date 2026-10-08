@@ -27,6 +27,7 @@ from daysofcover.engine.allocation import (
     CustomerOrder,
     allocate_by_backlog_proportion,
     allocate_by_margin_priority,
+    allocate_batch_aware_components,
     allocate_finished_goods_to_orders,
     supplier_split_ratios,
 )
@@ -193,3 +194,57 @@ def test_state_chassis_is_sized_from_the_network_it_was_built_from(network: Netw
         assert 0 <= state.node_index(node.id) < n_nodes
     for part in network.parts:
         assert 0 <= state.part_index(part.id) < n_parts
+
+
+@given(
+    available_batches=st.integers(min_value=0, max_value=100),
+    batch_sizes=st.lists(
+        st.integers(min_value=1, max_value=12), min_size=3, max_size=3
+    ),
+    requests=st.lists(
+        st.integers(min_value=0, max_value=20), min_size=3, max_size=3
+    ),
+    backlogs=st.lists(
+        st.integers(min_value=0, max_value=100), min_size=3, max_size=3
+    ),
+    margins=st.lists(
+        st.integers(min_value=0, max_value=100), min_size=3, max_size=3
+    ),
+    rule=st.sampled_from(["backlog_proportion", "margin_priority"]),
+)
+@settings(deadline=None)
+def test_batch_allocation_conserves_stock_and_is_order_independent(
+    available_batches: int,
+    batch_sizes: list[int],
+    requests: list[int],
+    backlogs: list[int],
+    margins: list[int],
+    rule: str,
+) -> None:
+    """All allocated stock fits whole batches and is stable under SKU permutation."""
+    batch_by_sku = dict(zip(_SKU_IDS, batch_sizes, strict=True))
+    requested_by_sku = {
+        sku: batch_by_sku[sku] * count
+        for sku, count in zip(_SKU_IDS, requests, strict=True)
+    }
+    backlog_by_sku = dict(zip(_SKU_IDS, backlogs, strict=True))
+    margin_by_sku = dict(zip(_SKU_IDS, margins, strict=True))
+    available = float(available_batches)
+
+    def allocate(ids: list[str]) -> dict[str, float]:
+        return allocate_batch_aware_components(
+            available_quantity=available,
+            requested_by_sku={sku: float(requested_by_sku[sku]) for sku in ids},
+            batch_component_by_sku={sku: float(batch_by_sku[sku]) for sku in ids},
+            backlog_by_sku={sku: float(backlog_by_sku[sku]) for sku in ids},
+            margin_by_sku={sku: float(margin_by_sku[sku]) for sku in ids},
+            rule=rule,
+        )
+
+    result = allocate(_SKU_IDS)
+    assert result == allocate(list(reversed(_SKU_IDS)))
+    assert sum(result.values()) <= available + _TOLERANCE
+    for sku, quantity in result.items():
+        assert quantity >= 0
+        assert quantity <= requested_by_sku[sku] + _TOLERANCE
+        assert quantity % batch_by_sku[sku] == 0
