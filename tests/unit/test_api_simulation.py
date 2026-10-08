@@ -82,3 +82,30 @@ def test_simulation_contract_and_determinism() -> None:
     assert body["baseline"]["total_demand_units"] == 35.0
     assert body["baseline"]["total_fulfilled_units"] > body["disrupted"]["total_fulfilled_units"]
     assert client.post("/api/simulation/bounded", json=payload).json() == body
+
+
+def test_bounded_request_size_limit() -> None:
+    import json
+
+    valid = valid_request()
+    assert client.post("/api/simulation/bounded", json=valid).status_code == 200
+
+    oversized = json.dumps(valid).encode() + b" " * (256 * 1024)
+    response = client.post(
+        "/api/simulation/bounded",
+        content=oversized,
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 413
+    assert "256 KiB" in response.json()["detail"]
+
+    response = client.post(
+        "/api/simulation/bounded",
+        content=b"{}",
+        headers={"content-type": "application/json", "content-length": "invalid"},
+    )
+    assert response.status_code in (400, 422)
+
+
+def test_request_size_limit_is_endpoint_specific() -> None:
+    assert client.post("/api/example/simulation").status_code == 200
