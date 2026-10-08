@@ -23,14 +23,38 @@
   let filter = $state<"all" | "node" | "lane">("all");
   let search = $state("");
   let selected = $state<ExposureRow | null>(null);
+  let sortBy = $state<"exposure" | "element" | "pairs">("exposure");
+  let sortDescending = $state(true);
 
-  const filtered = $derived(
-    (report?.rows ?? []).filter(
+  const filtered = $derived.by(() => {
+    const rows = (report?.rows ?? []).filter(
       (row) =>
         (filter === "all" || row.element_type === filter) &&
         row.element_id.toLowerCase().includes(search.trim().toLowerCase())
-    )
-  );
+    );
+    const direction = sortDescending ? -1 : 1;
+    return rows.sort((left, right) => {
+      if (sortBy === "element") {
+        return direction * left.element_id.localeCompare(right.element_id);
+      }
+      const leftValue = sortBy === "pairs" ? left.affected_customer_sku_pairs : left.convergence_fraction;
+      const rightValue = sortBy === "pairs" ? right.affected_customer_sku_pairs : right.convergence_fraction;
+      return direction * (leftValue - rightValue) || left.element_id.localeCompare(right.element_id);
+    });
+  });
+
+  function setSort(column: "exposure" | "element" | "pairs") {
+    if (sortBy === column) {
+      sortDescending = !sortDescending;
+    } else {
+      sortBy = column;
+      sortDescending = column !== "element";
+    }
+  }
+
+  function selectRow(row: ExposureRow) {
+    selected = row;
+  }
 
   async function loadExposure() {
     loading = true;
@@ -72,7 +96,7 @@
   </aside>
 
   <main>
-    <header class="topbar"><span>ANALYTICS / NETWORK EXPOSURE</span><span class="status"><span class="status-dot"></span> Example dataset</span></header>
+    <header class="topbar"><span>ANALYTICS / NETWORK EXPOSURE</span><span class="status"><span class="status-dot"></span> Synthetic example</span></header>
     <div class="content">
       <div class="heading"><div><div class="eyebrow">SUPPLY NETWORK ANALYSIS</div><h1>Structural exposure</h1><p>Identify nodes and transport lanes whose removal disconnects customer-product supply paths.</p></div><span class="mode-tag">READ-ONLY ANALYSIS</span></div>
 
@@ -81,7 +105,7 @@
       {:else if error}
         <section class="panel message error" role="alert"><strong>Analysis unavailable</strong><p>Unable to load the example network: {error}</p><button onclick={loadExposure}>Retry</button></section>
       {:else if report}
-        <div class="metrics">
+        <div class="metrics" aria-label="Network summary">
           <div class="metric"><span>NETWORK</span><strong>{report.dataset}</strong><small>Synthetic reference case</small></div>
           <div class="metric"><span>NODES</span><strong>{report.nodes}</strong><small>Facilities and network points</small></div>
           <div class="metric"><span>TRANSPORT LANES</span><strong>{report.lanes}</strong><small>Directed connections</small></div>
@@ -90,11 +114,11 @@
         <div class="analysis-layout">
           <section class="panel ranking">
             <div class="panel-head"><div><h2>Dependency ranking</h2><p>Sorted by value-weighted customer/SKU paths disconnected</p></div><span class="count">{filtered.length} ELEMENTS</span></div>
-            <div class="controls"><div class="tabs" aria-label="Element type"><button class:active={filter === "all"} onclick={() => filter = "all"}>All</button><button class:active={filter === "node"} onclick={() => filter = "node"}>Nodes</button><button class:active={filter === "lane"} onclick={() => filter = "lane"}>Lanes</button></div><input aria-label="Search network elements" placeholder="Search element ID…" bind:value={search} /></div>
-            <div class="table-wrap"><table><thead><tr><th>ELEMENT</th><th>TYPE</th><th>EXPOSURE</th><th class="right">AFFECTED PAIRS</th></tr></thead><tbody>
+            <div class="controls"><div class="tabs" role="group" aria-label="Element type"><button class:active={filter === "all"} onclick={() => filter = "all"}>All</button><button class:active={filter === "node"} onclick={() => filter = "node"}>Nodes</button><button class:active={filter === "lane"} onclick={() => filter = "lane"}>Lanes</button></div><input aria-label="Search network elements" placeholder="Search element ID…" bind:value={search} /></div>
+            <div class="table-wrap"><table><thead><tr><th><button class="sort-button" onclick={() => setSort("element")}>ELEMENT {sortBy === "element" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th>TYPE</th><th><button class="sort-button" onclick={() => setSort("exposure")}>EXPOSURE {sortBy === "exposure" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th class="right"><button class="sort-button" onclick={() => setSort("pairs")}>AFFECTED PAIRS {sortBy === "pairs" ? (sortDescending ? "↓" : "↑") : ""}</button></th></tr></thead><tbody>
               {#each filtered as row (row.element_id)}
-                <tr class:selected={selected?.element_id === row.element_id} onclick={() => selected = row} aria-selected={selected?.element_id === row.element_id}>
-                  <td class="element">{row.element_id}</td><td><span class="type">{row.element_type}</span></td>
+                <tr class:selected={selected?.element_id === row.element_id}>
+                  <td class="element"><button class="element-button" aria-pressed={selected?.element_id === row.element_id} onclick={() => selectRow(row)}>{row.element_id}</button></td><td><span class="type">{row.element_type}</span></td>
                   <td><div class="exposure"><span class="bar-track"><span class="bar" style:width={percentage(row.convergence_fraction)}></span></span><span>{percentage(row.convergence_fraction)}</span></div></td>
                   <td class="right">{row.affected_customer_sku_pairs}</td>
                 </tr>
@@ -145,7 +169,7 @@
   .controls{display:flex;justify-content:space-between;gap:12px;padding:0 24px 20px}
   .tabs{display:flex;background:#f1f4f8;border-radius:6px;padding:3px}.tabs button{border:0;background:transparent;color:#65778b;padding:8px 13px;border-radius:5px;cursor:pointer;font-size:12px}.tabs button.active{background:#fff;color:#215e98;box-shadow:0 1px 4px #12243b1a;font-weight:700}
   input{border:1px solid #dce4ec;border-radius:6px;padding:9px 12px;min-width:0;width:205px;font-size:12px}
-  .table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;color:#8a98a9;font-size:10px;letter-spacing:.8px;background:#f8fafc;padding:14px 23px;white-space:nowrap}td{padding:15px 23px;border-top:1px solid #edf0f4}tbody tr{cursor:pointer}tbody tr:hover,tbody tr.selected{background:#f0f6fc}.element{font-weight:700;color:#294d75;overflow-wrap:anywhere}.type{display:inline-block;text-transform:uppercase;font-size:10px;letter-spacing:.6px;background:#eaf0f6;color:#55718d;padding:5px 8px;border-radius:4px}.right{text-align:right}
+  .table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;color:#8a98a9;font-size:10px;letter-spacing:.8px;background:#f8fafc;padding:14px 23px;white-space:nowrap}td{padding:15px 23px;border-top:1px solid #edf0f4}tbody tr{cursor:default}tbody tr:hover,tbody tr.selected{background:#f0f6fc}.element{font-weight:700;color:#294d75;overflow-wrap:anywhere}.element-button{background:none;border:0;padding:4px 0;color:inherit;font-weight:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.element-button:focus-visible,.sort-button:focus-visible,.tabs button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.sort-button{background:none;border:0;padding:0;color:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;cursor:pointer;text-align:inherit}.type{display:inline-block;text-transform:uppercase;font-size:10px;letter-spacing:.6px;background:#eaf0f6;color:#55718d;padding:5px 8px;border-radius:4px}.right{text-align:right}
   .exposure{display:flex;gap:10px;align-items:center;min-width:150px}.exposure>span:last-child{min-width:43px;text-align:right;font-weight:650}.bar-track{height:7px;background:#e8edf3;border-radius:8px;flex:1;overflow:hidden}.bar{display:block;background:#3b82bc;height:100%;border-radius:8px}.empty{text-align:center;color:#7b8b9d;padding:32px}
   .detail{padding:25px;align-self:start}.detail h2{overflow-wrap:anywhere;margin:16px 0 12px;font-size:20px}.detail-stat{border-top:1px solid #e8edf3;margin-top:22px;padding-top:18px}.detail-stat span{display:block;font-size:11px;color:#78899b}.detail-stat strong{display:block;font-size:28px;margin-top:6px}.detail p{font-size:12px;color:#718399;line-height:1.8;margin-top:24px}
   .method{border-left:3px solid #397cb9;background:#eaf1f8;padding:18px 22px;margin-top:23px;border-radius:0 6px 6px 0}.method strong{font-size:12px}.method p{font-size:12px;color:#58718b;line-height:1.7;margin:8px 0 0}
