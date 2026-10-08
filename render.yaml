@@ -7,7 +7,9 @@
 # this to pull without authentication.
 #
 # Single stateless service hosting the current preview and /health.
-# Scenario analysis endpoints and a complete decision interface are not yet deployed.
+# The image exposes illustrative example endpoints and the bounded synchronous
+# simulation API. Deployment of a new image and public availability must be
+# verified separately; this blueprint does not establish production readiness.
 services:
   - type: web
     name: daysofcover
