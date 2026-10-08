@@ -60,6 +60,13 @@
     }
   }
 
+  function handleSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && search) {
+      search = "";
+      event.preventDefault();
+    }
+  }
+
   function clearFilters() {
     filter = "all";
     search = "";
@@ -194,7 +201,7 @@
         <section class="panel message error" role="alert"><strong>Analysis unavailable</strong><p>Unable to load the example network: {error}</p><button onclick={loadExposure}>Retry</button></section>
       {:else if report}
         {#if metadataUnavailable}<p class="metadata-notice" role="status">Element names are temporarily unavailable. Network IDs remain available for analysis.</p>{/if}
-        <div class="metrics" aria-label="Network summary">
+        <div class="metrics" role="group" aria-label="Network summary">
           <div class="metric"><span>NETWORK</span><strong>{report.dataset}</strong><small>Synthetic reference case</small></div>
           <div class="metric"><span>NODES</span><strong>{report.nodes}</strong><small>Facilities and network points</small></div>
           <div class="metric"><span>TRANSPORT LANES</span><strong>{report.lanes}</strong><small>Directed connections</small></div>
@@ -203,11 +210,11 @@
         <div class="analysis-layout">
           <section class="panel ranking">
             <div class="panel-head"><div><h2>Dependency ranking</h2><p>Structural exposure of customer/SKU paths. Select column headings to sort.</p></div><span class="count">{filtered.length} ELEMENTS</span></div>
-            <div class="controls"><div class="tabs" role="group" aria-label="Element type"><button class:active={filter === "all"} onclick={() => filter = "all"}>All</button><button class:active={filter === "node"} onclick={() => filter = "node"}>Nodes</button><button class:active={filter === "lane"} onclick={() => filter = "lane"}>Lanes</button></div><input aria-label="Search network elements" placeholder="Search ID or name…" bind:value={search} /></div>
+            <div class="controls"><div class="tabs" role="group" aria-label="Element type"><button aria-pressed={filter === "all"} class:active={filter === "all"} onclick={() => filter = "all"}>All</button><button aria-pressed={filter === "node"} class:active={filter === "node"} onclick={() => filter = "node"}>Nodes</button><button aria-pressed={filter === "lane"} class:active={filter === "lane"} onclick={() => filter = "lane"}>Lanes</button></div><input aria-label="Search network elements" placeholder="Search ID or name…" bind:value={search} onkeydown={handleSearchKeydown} /></div>
             <div class="table-wrap"><table><thead><tr><th aria-sort={sortBy === "element" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("element")}>ELEMENT {sortBy === "element" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th>TYPE</th><th aria-sort={sortBy === "exposure" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("exposure")}>EXPOSURE {sortBy === "exposure" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th class="right" aria-sort={sortBy === "pairs" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("pairs")}>AFFECTED PAIRS {sortBy === "pairs" ? (sortDescending ? "↓" : "↑") : ""}</button></th></tr></thead><tbody>
               {#each filtered as row (`${row.element_type}:${row.element_id}`)}
                 <tr class:selected={selected?.element_id === row.element_id && selected?.element_type === row.element_type}>
-                  <td class="element"><button class="element-button" aria-pressed={selected?.element_id === row.element_id} onclick={() => selectRow(row)}>{row.element_id}</button>{#if elementLabel(row) !== row.element_id}<span class="element-label">{elementLabel(row)}</span>{/if}</td><td><span class="type">{row.element_type}</span></td>
+                  <td class="element"><button class="element-button" aria-pressed={selected?.element_id === row.element_id && selected?.element_type === row.element_type} onclick={() => selectRow(row)}>{row.element_id}</button>{#if elementLabel(row) !== row.element_id}<span class="element-label">{elementLabel(row)}</span>{/if}</td><td><span class="type">{row.element_type}</span></td>
                   <td><div class="exposure"><span class="bar-track"><span class="bar" style:width={percentage(row.convergence_fraction)}></span></span><span>{percentage(row.convergence_fraction)}</span></div></td>
                   <td class="right">{row.affected_customer_sku_pairs}</td>
                 </tr>
@@ -216,7 +223,7 @@
               {/each}
             </tbody></table></div>
           </section>
-          <aside class="panel detail" aria-live="polite"><div class="eyebrow">ELEMENT INSPECTOR</div>{#if selected && selectedVisible}<h2>{elementLabel(selected)}</h2>{#if elementLabel(selected) !== selected.element_id}<p class="detail-id">{selected.element_id}</p>{/if}<span class="type">{selected.element_type}</span><div class="detail-stat"><span>Structural exposure</span><strong>{percentage(selected.convergence_fraction)}</strong></div><div class="detail-stat"><span>Disconnected customer/SKU pairs</span><strong>{selected.affected_customer_sku_pairs}</strong></div><p>This screen tests whether qualified supply paths remain when the selected element is removed. It does not estimate when stock runs out.</p>{:else if selected}<p>The selected element is hidden by the current filters. Choose a visible element or <button class="clear-button" onclick={clearFilters}>clear filters</button> to inspect it.</p>{:else}<p>Select an element to inspect its dependency exposure.</p>{/if}</aside>
+          <aside class="panel detail" aria-label="Element inspector" aria-live="polite" aria-atomic="true"><div class="eyebrow">ELEMENT INSPECTOR</div>{#if selected && selectedVisible}<h2>{elementLabel(selected)}</h2>{#if elementLabel(selected) !== selected.element_id}<p class="detail-id">{selected.element_id}</p>{/if}<span class="type">{selected.element_type}</span><div class="detail-stat"><span>Structural exposure</span><strong>{percentage(selected.convergence_fraction)}</strong></div><div class="detail-stat"><span>Disconnected customer/SKU pairs</span><strong>{selected.affected_customer_sku_pairs}</strong></div><p>This screen tests whether qualified supply paths remain when the selected element is removed. It does not estimate when stock runs out.</p>{:else if selected}<p>The selected element is hidden by the current filters. Choose a visible element or <button class="clear-button" onclick={clearFilters}>clear filters</button> to inspect it.</p>{:else}<p>Select an element to inspect its dependency exposure.</p>{/if}</aside>
         </div>
         <section class="method"><strong>Methodology &amp; limitations</strong><p>{report.method}. {report.limitations} This is a synthetic example, not an assessment of an operating business.</p></section>
       {/if}
@@ -229,6 +236,7 @@
   :global(*){box-sizing:border-box}
   :global(body){margin:0;background:#f4f6f9;color:#17253a;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
   :global(button),:global(input){font:inherit}
+  :global(button:focus-visible),:global(input:focus-visible){outline:2px solid #1e75bb;outline-offset:3px}
   .metadata-notice{background:#fff8e9;border:1px solid #ead9b4;border-radius:7px;color:#705520;padding:12px 16px;margin:0 0 18px;font-size:12px;line-height:1.5}
   .shell{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh;min-width:0}
   .sidebar{background:#11233b;color:#fff;padding:28px 18px;display:flex;flex-direction:column}
