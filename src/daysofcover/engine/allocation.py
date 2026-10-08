@@ -90,10 +90,14 @@ def allocate_batch_aware_components(
     allocation = {}
     for sku, requested in requested_by_sku.items():
         batch = batch_component_by_sku[sku]
-        allocation[sku] = min(
-            requested,
-            math.floor((target[sku] + 1e-9 * batch) / batch) * batch,
-        ) if batch > 0 else 0.0
+        allocation[sku] = (
+            min(
+                requested,
+                math.floor((target[sku] + 1e-9 * batch) / batch) * batch,
+            )
+            if batch > 0
+            else 0.0
+        )
 
     remaining = max(0.0, available_quantity - sum(allocation.values()))
     for sku in order:
