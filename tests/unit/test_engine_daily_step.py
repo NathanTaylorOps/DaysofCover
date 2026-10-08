@@ -1110,3 +1110,78 @@ def test_fractional_batch_consumption_preserves_unallocated_components() -> None
 
     assert report.sku_reports[0].production_started == 10.5
     assert state.on_hand[plant, part] == 79.0
+
+
+def test_batch_rounding_does_not_destroy_shared_component_inventory() -> None:
+    """Neither SKU can start a five-unit batch from an even split of nine."""
+    network = _two_sku_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    state.on_hand[plant, part] = 9.0
+    specs = [
+        SkuProductionSpec(
+            finished_sku_id=sku_id,
+            bom=[BOMLine(part_id="part-a", quantity=1.0)],
+            capacity_per_week=70.0,
+            batch_size=5.0,
+            production_lead_time_days=1.0,
+            orders=[],
+            production_queue=ProductionQueue(),
+        )
+        for sku_id in ("sku-a", "sku-b")
+    ]
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=specs,
+        current_day=0,
+    )
+    assert [sku.production_started for sku in report.sku_reports] == [0.0, 0.0]
+    assert state.on_hand[plant, part] == 9.0
+
+
+def test_plant_recovers_capacity_after_two_day_shutdown() -> None:
+    """Production starts resume on day three; finished goods arrive one day later."""
+    network = _network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    part = state.part_index("part-a")
+    state.on_hand[plant, part] = 100.0
+    disruption = Disruption(
+        element_id="plant-1", start_day=1, severity_fraction=1.0, duration_days=2
+    )
+    scenario = Scenario(id="recovery", name="Recovery", disruptions=[disruption], seed=1)
+    disruption_state = DisruptionState.from_scenario(scenario, network=network)
+    spec = SkuProductionSpec(
+        finished_sku_id="sku-a",
+        bom=[BOMLine(part_id="part-a", quantity=1.0)],
+        capacity_per_week=70.0,
+        batch_size=1.0,
+        production_lead_time_days=1.0,
+        orders=[],
+        production_queue=ProductionQueue(),
+    )
+    started = []
+    completed = []
+    for day in range(5):
+        report = advance_one_day(
+            state=state,
+            shipments=shipments,
+            plant_node_id="plant-1",
+            component_part_id="part-a",
+            inbound_lane_id=None,
+            sku_specs=[spec],
+            current_day=day,
+            disruption_state=disruption_state,
+        )
+        started.append(report.sku_reports[0].production_started)
+        completed.append(report.sku_reports[0].finished_goods_completed)
+    assert started == [10.0, 0.0, 0.0, 10.0, 10.0]
+    assert completed == [0.0, 10.0, 0.0, 0.0, 10.0]
+    assert state.on_hand[plant, part] == 70.0
