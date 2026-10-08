@@ -76,12 +76,7 @@ async def limit_bounded_request_size(request: Request, call_next: Any) -> Any:
             return too_large
         chunks.append(chunk)
 
-    body = b"".join(chunks)
-
-    async def replay_body() -> dict[str, Any]:
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request._receive = replay_body
+    request._body = b"".join(chunks)
     return await call_next(request)
 
 BOUNDED_DEMO_REQUEST = (
