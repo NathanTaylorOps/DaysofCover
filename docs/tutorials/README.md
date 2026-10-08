@@ -5,9 +5,10 @@ the first time. A tutorial takes a reader from nothing to a working result
 by following fixed, concrete steps — it does not explain design decisions
 (see `../explanation/`) or serve as a reference (see `../reference/`).
 
-Planned for v1.0 (Stage 10): a single "run your first stress test" tutorial
-that walks through `uvx daysofcover demo`, reading the board page, and
-running one custom scenario against the Moreton Marine example network.
+A full web-based stress-test tutorial will be added once the scenario
+execution interface exists. The hosted page currently exposes only a
+technical preview.
 
-Nothing here yet — this directory is scaffolding ahead of the content
-written in Stage 10.
+For now, start with the [README](../../README.md) to validate the Moreton
+Marine example and inspect the existing command-line cover analysis.
+A worked management scenario with verified outputs remains planned.
