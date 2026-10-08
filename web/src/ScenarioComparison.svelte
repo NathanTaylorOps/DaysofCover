@@ -147,6 +147,7 @@
     return "The disruption changes same-day fulfilment by " + result.fulfillment_delta_units.toLocaleString() + " units relative to baseline. Compare the daily bars and backlog to see when the runs diverge.";
   }
   function percent(value: number) { return `${(value * 100).toFixed(1)}%`; }
+  function units(value: number) { return value.toLocaleString(undefined, { maximumFractionDigits: 2 }); }
   onMount(() => { void loadExample(); return () => aborter?.abort(); });
 </script>
 
@@ -185,14 +186,14 @@
       <section aria-label="Scenario results" aria-live="polite">
         <div class="panel-title results-title"><div><h2>Comparison results</h2><p>Daily fulfilment is measured against new demand, not eventual backlog recovery.</p></div><span class="tag">ILLUSTRATIVE INPUTS</span></div>
         <div class="metrics">
-          <div class="panel metric"><span>BASELINE SERVICE</span><strong>{percent(result.baseline.service_fraction)}</strong><small>{result.baseline.total_fulfilled_units} / {result.baseline.total_demand_units} units</small></div>
-          <div class="panel metric"><span>DISRUPTED SERVICE</span><strong>{percent(result.disrupted.service_fraction)}</strong><small>{result.disrupted.total_fulfilled_units} / {result.disrupted.total_demand_units} units</small></div>
-          <div class="panel metric"><span>FULFILMENT DIFFERENCE</span><strong>{result.fulfillment_delta_units > 0 ? "+" : ""}{result.fulfillment_delta_units} units</strong><small>Disrupted minus baseline</small></div>
+          <div class="panel metric"><span>BASELINE SERVICE</span><strong>{percent(result.baseline.service_fraction)}</strong><small>{units(result.baseline.total_fulfilled_units)} / {units(result.baseline.total_demand_units)} units</small></div>
+          <div class="panel metric"><span>DISRUPTED SERVICE</span><strong>{percent(result.disrupted.service_fraction)}</strong><small>{units(result.disrupted.total_fulfilled_units)} / {units(result.disrupted.total_demand_units)} units</small></div>
+          <div class="panel metric"><span>FULFILMENT DIFFERENCE</span><strong>{result.fulfillment_delta_units > 0 ? "+" : ""}{units(result.fulfillment_delta_units)} units</strong><small>Disrupted minus baseline</small></div>
         </div>
         <div class="panel interpretation" role="status"><h2>What the comparison means</h2><p>{explainResult()}</p></div>
         <div class="panel chart-panel"><h2>Daily fulfilment comparison</h2><p>Bars show the share of each day's new demand fulfilled. Blue: baseline; dark: disrupted.</p>
           <div class="chart-key"><span><i class="baseline-key"></i>Baseline</span><span><i class="disrupted-key"></i>Disrupted</span></div>
-          <div class="chart-scroll"><div class="chart-grid">
+          <div class="chart-scroll" role="region" aria-label="Daily fulfilment chart, scroll horizontally for additional days" tabindex="0"><div class="chart-grid" aria-hidden="true">
             {#each result.baseline.daily as day, i (day.day)}
               <div class="chart-day" title={`Day ${day.day}: baseline ${day.fulfilled_units}, disrupted ${result.disrupted.daily[i]?.fulfilled_units ?? 0} units`}>
                 <div class="bar-pair"><div class="chart-bar baseline-bar" style:height={percent(day.demand_units ? Math.min(1,day.fulfilled_units / day.demand_units) : 1)}></div><div class="chart-bar disrupted-bar" style:height={percent(day.demand_units ? Math.min(1,(result.disrupted.daily[i]?.fulfilled_units ?? 0) / day.demand_units) : 1)}></div></div>
@@ -202,9 +203,9 @@
           </div></div>
           <p class="chart-note">Day numbers start at 0. Exact quantities and cumulative backlog appear in the table below.</p>
         </div>
-        <div class="panel table-panel"><h2>Daily outcomes</h2><div class="table-wrap"><table><thead><tr><th>DAY</th><th>DEMAND</th><th>BASELINE FULFILLED</th><th>DISRUPTED FULFILLED</th><th>BASELINE BACKLOG</th><th>DISRUPTED BACKLOG</th></tr></thead><tbody>
+        <div class="panel table-panel"><h2>Daily outcomes</h2><div class="table-wrap" role="region" aria-label="Daily outcome table, scroll horizontally for additional columns" tabindex="0"><table><caption>Daily demand, fulfilment and cumulative backlog, in units</caption><thead><tr><th>DAY</th><th>DEMAND</th><th>BASELINE FULFILLED</th><th>DISRUPTED FULFILLED</th><th>BASELINE BACKLOG</th><th>DISRUPTED BACKLOG</th></tr></thead><tbody>
           {#each result.baseline.daily as day, i (day.day)}
-            <tr><td>{day.day}</td><td>{day.demand_units}</td><td>{day.fulfilled_units}</td><td>{result.disrupted.daily[i]?.fulfilled_units ?? "—"}</td><td>{day.backlog_units}</td><td>{result.disrupted.daily[i]?.backlog_units ?? "—"}</td></tr>
+            <tr><th scope="row">{day.day}</th><td>{units(day.demand_units)}</td><td>{units(day.fulfilled_units)}</td><td>{units(result.disrupted.daily[i].fulfilled_units)}</td><td>{units(day.backlog_units)}</td><td>{units(result.disrupted.daily[i].backlog_units)}</td></tr>
           {/each}
         </tbody></table></div></div>
         <div class="notes"><section class="panel"><h2>Assumptions</h2><ul>{#each result.assumptions as item}<li>{item}</li>{/each}</ul></section><section class="panel"><h2>Limitations</h2><ul>{#each result.limitations as item}<li>{item}</li>{/each}</ul></section></div>
@@ -229,8 +230,8 @@
   button:focus-visible,input:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}
   .form-bottom{border-top:1px solid #edf0f4;padding-top:20px}.form-bottom span{font-size:11px;color:#7c8b9d;overflow-wrap:anywhere}
   .results-title{margin:30px 0 18px}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px}
-  .metric{padding:24px}.metric span{display:block;font-size:10px;font-weight:750;letter-spacing:1px;color:#7c8b9d}.metric strong{display:block;font-size:28px;margin:12px 0 5px}.metric small{color:#8190a2;font-size:11px}
-  .table-panel{padding:24px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;background:#f8fafc;color:#8291a4;font-size:10px;letter-spacing:.5px;white-space:nowrap}td,th{padding:14px;border-bottom:1px solid #edf0f4}
+  .metric{padding:24px}.metric span{display:block;font-size:10px;font-weight:750;letter-spacing:1px;color:#7c8b9d}.metric strong{display:block;font-size:28px;margin:12px 0 5px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.metric small{color:#8190a2;font-size:11px}
+  .table-panel{padding:24px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;background:#f8fafc;color:#8291a4;font-size:10px;letter-spacing:.5px;white-space:nowrap}td,th{padding:14px;border-bottom:1px solid #edf0f4}td{text-align:right;font-variant-numeric:tabular-nums}thead th:not(:first-child){text-align:right}tbody th{text-align:left;font-weight:650}caption{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .notes{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}.notes .panel{padding:24px}li{color:#63788d;font-size:12px;line-height:1.7;margin:8px 0}.error{color:#a33232;margin:15px 0}.message{padding:30px}
   .capacity-summary{border:1px solid #dce6ef;background:#f5f9fc;padding:15px 18px;border-radius:6px;margin-bottom:20px;display:grid;gap:7px;font-size:12px;color:#49637d}
   .capacity-summary strong{color:#1d4468}.capacity-summary p{font-size:12px}
@@ -242,6 +243,7 @@
   .bar-pair{height:150px;width:100%;display:flex;align-items:end;justify-content:center;gap:3px}
   .chart-bar{width:12px;min-height:0;border-radius:3px 3px 0 0}
   .chart-note{margin-top:12px;font-size:11px}
+  .chart-scroll:focus-visible,.table-wrap:focus-visible{outline:2px solid #1e75bb;outline-offset:2px}
   @media(max-width:1000px){.fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:700px){.scenario{padding:24px 16px}.heading,.panel-title,.form-bottom{align-items:flex-start;flex-direction:column}.fields{grid-template-columns:1fr}.metrics,.notes{grid-template-columns:1fr}.metric{padding:18px}.tag{white-space:normal}}
 </style>
