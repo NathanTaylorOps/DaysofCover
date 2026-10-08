@@ -1224,3 +1224,103 @@ def test_batch_aware_allocation_is_independent_of_sku_input_order() -> None:
     expected = ({"sku-a": 5.0, "sku-b": 0.0}, 4.0)
     assert run(("sku-a", "sku-b")) == expected
     assert run(("sku-b", "sku-a")) == expected
+
+
+def test_shared_stock_not_reserved_by_sku_missing_other_bom_component() -> None:
+    """An unbuildable high-priority SKU cannot block a feasible competitor."""
+    network = _two_sku_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    shared = state.part_index("part-a")
+    other = state.part_index("part-b")
+    state.on_hand[plant, shared] = 10.0
+    state.on_hand[plant, other] = 0.0
+    specs = [
+        SkuProductionSpec(
+            finished_sku_id="sku-a",
+            bom=[
+                BOMLine(part_id="part-a", quantity=1.0),
+                BOMLine(part_id="part-b", quantity=1.0),
+            ],
+            capacity_per_week=70.0,
+            batch_size=1.0,
+            production_lead_time_days=1.0,
+            orders=[],
+            production_queue=ProductionQueue(),
+            margin_fraction=0.9,
+        ),
+        SkuProductionSpec(
+            finished_sku_id="sku-b",
+            bom=[BOMLine(part_id="part-a", quantity=1.0)],
+            capacity_per_week=70.0,
+            batch_size=1.0,
+            production_lead_time_days=1.0,
+            orders=[],
+            production_queue=ProductionQueue(),
+            margin_fraction=0.1,
+        ),
+    ]
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=specs,
+        current_day=0,
+        allocation_rule="margin_priority",
+    )
+    assert [item.production_started for item in report.sku_reports] == [0.0, 10.0]
+    assert state.on_hand[plant, shared] == 0.0
+    assert state.on_hand[plant, other] == 0.0
+
+
+def test_shared_component_request_respects_other_component_batch_limit() -> None:
+    """A partial second BOM can only support one full production batch."""
+    network = _two_sku_network()
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    plant = state.node_index("plant-1")
+    shared = state.part_index("part-a")
+    other = state.part_index("part-b")
+    state.on_hand[plant, shared] = 15.0
+    state.on_hand[plant, other] = 4.0
+    specs = [
+        SkuProductionSpec(
+            finished_sku_id="sku-a",
+            bom=[
+                BOMLine(part_id="part-a", quantity=2.0),
+                BOMLine(part_id="part-b", quantity=1.0),
+            ],
+            capacity_per_week=70.0,
+            batch_size=3.0,
+            production_lead_time_days=1.0,
+            orders=[],
+            production_queue=ProductionQueue(),
+            margin_fraction=0.9,
+        ),
+        SkuProductionSpec(
+            finished_sku_id="sku-b",
+            bom=[BOMLine(part_id="part-a", quantity=1.0)],
+            capacity_per_week=70.0,
+            batch_size=1.0,
+            production_lead_time_days=1.0,
+            orders=[],
+            production_queue=ProductionQueue(),
+            margin_fraction=0.1,
+        ),
+    ]
+    report = advance_one_day(
+        state=state,
+        shipments=shipments,
+        plant_node_id="plant-1",
+        component_part_id="part-a",
+        inbound_lane_id=None,
+        sku_specs=specs,
+        current_day=0,
+        allocation_rule="margin_priority",
+    )
+    assert [item.production_started for item in report.sku_reports] == [3.0, 9.0]
+    assert state.on_hand[plant, shared] == 0.0
+    assert state.on_hand[plant, other] == 1.0
