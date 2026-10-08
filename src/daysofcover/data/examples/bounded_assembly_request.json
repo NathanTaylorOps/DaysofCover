@@ -1,0 +1,62 @@
+{
+  "network": {
+    "base_currency": "AUD",
+    "nodes": [
+      {
+        "id": "demo_plant",
+        "name": "Illustrative Assembly Plant",
+        "type": "plant",
+        "region": "AU"
+      }
+    ],
+    "lanes": [],
+    "parts": [
+      {
+        "id": "demo_component",
+        "name": "Assembly Component",
+        "suppliers": [
+          {
+            "node_id": "demo_plant",
+            "split_ratio": 1
+          }
+        ],
+        "unit_cost": 12,
+        "currency": "AUD"
+      }
+    ],
+    "skus": [
+      {
+        "id": "demo_sku",
+        "name": "Finished Assembly",
+        "price": {
+          "AUD": 80
+        },
+        "margin_fraction": 0.3,
+        "currency": "AUD",
+        "bom": [
+          {
+            "part_id": "demo_component",
+            "quantity": 1
+          }
+        ],
+        "production_lead_time_days": 1,
+        "batch_size": 1
+      }
+    ],
+    "customers": []
+  },
+  "config": {
+    "plant_node_id": "demo_plant",
+    "sku_id": "demo_sku",
+    "component_part_id": "demo_component",
+    "initial_component_units": 200,
+    "initial_finished_units": 5,
+    "daily_demand_units": 5,
+    "horizon_days": 7,
+    "production_capacity_per_week": 70,
+    "disruption_start_day": 0,
+    "disruption_duration_days": 7,
+    "disruption_severity_fraction": 1,
+    "seed": 42
+  }
+}
