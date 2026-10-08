@@ -28,6 +28,7 @@ structural screen and case 9's DES-vs-LP gap reporting are later Stage
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from daysofcover.engine.allocation import CustomerOrder
 from daysofcover.engine.daily_step import SkuProductionSpec, advance_one_day
@@ -315,3 +316,19 @@ def test_des_sales_lost_equals_lp_impact_lost_sales_case_8() -> None:
     )
     assert impact.status == "optimal"
     assert impact.lost_sales_by_customer_sku[("cust-1", "sku-a")] == des_lost_sales
+
+
+@pytest.mark.parametrize("horizon", [-1.0, float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("solver_name", ["impact", "buffer"])
+def test_fixed_horizon_lp_rejects_invalid_horizons(horizon: float, solver_name: str) -> None:
+    """Reject invalid horizons before constructing a solver problem."""
+    from daysofcover.lp.aggregate import solve_buffer
+
+    solver = solve_impact if solver_name == "impact" else solve_buffer
+    with pytest.raises(ValueError, match="horizon_days must be a finite, non-negative number"):
+        solver(
+            _case_7_network(),
+            removed_element_id="n1",
+            horizon_days=horizon,
+            starting_inventory={("n3", sku_key("sku-a")): 50.0},
+        )
