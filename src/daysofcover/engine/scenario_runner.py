@@ -140,9 +140,7 @@ def compare_bounded_scenario(network: Network, config: BoundedScenarioInput) -> 
         seed=config.seed,
         baseline=baseline,
         disrupted=disrupted,
-        fulfillment_delta_units=(
-            disrupted.total_fulfilled_units - baseline.total_fulfilled_units
-        ),
+        fulfillment_delta_units=(disrupted.total_fulfilled_units - baseline.total_fulfilled_units),
         assumptions=[
             "Initial component and finished-goods inventory are supplied explicitly.",
             "Demand is constant and deterministic in both runs.",

@@ -1,9 +1,8 @@
 """Hosted preview API and static application entry point.
 
-The Docker image serves the Svelte technical preview and exposes a health
-endpoint. Scenario execution, bounded job processing and result reporting
-are not yet exposed as HTTP endpoints, even though modelling components
-exist in the Python package.
+The Docker image serves the Svelte technical preview, health endpoint,
+and a bounded synchronous single-plant scenario comparison API.
+General network simulation and background job processing are not exposed.
 
 ``/health`` is checked before any explicit route registration order
 matters here: FastAPI/Starlette matches an exact path before it falls
@@ -22,17 +21,21 @@ always Linux, so the number that matters is always real.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from daysofcover import __version__
+from daysofcover.engine.scenario_runner import BoundedScenarioInput, compare_bounded_scenario
 from daysofcover.io.loaders import load_network
 from daysofcover.lp.structure import structural_convergence
+from daysofcover.models.network import Network, StrictModel
+from daysofcover.models.results import ScenarioComparison
 
 if sys.platform != "win32":
     import resource
@@ -63,6 +66,27 @@ class ExposureReport(BaseModel):
     nodes: int
     lanes: int
     rows: list[ExposureRow]
+
+
+class SimulationRequest(StrictModel):
+    network: dict[str, Any]
+    config: BoundedScenarioInput
+
+
+@app.post("/api/simulation/bounded", response_model=ScenarioComparison)
+def bounded_simulation(request: SimulationRequest) -> ScenarioComparison:
+    """Compare a bounded plant disruption on a caller-supplied network.
+
+    This endpoint does not use the Moreton Marine example because its SKUs
+    contain multi-component BOMs, unsupported by the bounded runner.
+    """
+    try:
+        # Strict network enums accept their string values in JSON mode,
+        # but reject strings in Python-mode model validation.
+        network = Network.model_validate_json(json.dumps(request.network))
+        return compare_bounded_scenario(network, request.config)
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/example/exposure", response_model=ExposureReport)
