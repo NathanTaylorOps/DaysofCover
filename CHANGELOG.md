@@ -1,66 +1,68 @@
-﻿# Changelog
+# Changelog
 
-All notable changes to this project are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
+Significant changes are recorded by release. The project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
 ### Added
 
-- Stage 1 spike: a single-node daily-step engine (continuous-review base-stock, periodic (R, S), periodic (s, S)), validated against validation cases 1 to 3.
-- ADR-008: own daily-step engine over SimPy, confirmed by the spike's numbers.
-- Per-shipment in-transit records (crossing allowed, independent lognormal lead times), validated against validation cases 5 and 6.
-- Order-pausing disruptions on a base-stock node (a two-state Markov process), validated against validation case 4.
-- A serial multi-node chain (order-up-to with a moving-average forecast), validated against validation case 11 (bullwhip).
-- A linear production-capacity ramp after a restart, validated against validation case 12 (ramp bounds).
-- A backlog-driven shipment-recovery lag behind a step production recovery, validated against validation case 13 (shipment lag).
-- The multi-node engine's state chassis: NumPy arrays indexed by (node, part) for on-hand and backlog, sized from a real network.
-- Per-lane, per-part in-transit shipments (FIFO unless allow_crossing, an independent lognormal lead time per shipment).
-- BOM-driven production at a plant: feasible daily output capped by capacity and the scarcest component, batched, with a fixed-lead-time production queue.
-- The first end-to-end daily-step loop, composing the state chassis, per-lane shipments and production for one plant and one SKU.
-- The allocation and split rules: backlog-proportional and margin-priority splits across SKUs, FIFO-with-priority-override across customer orders, and the dual-source fixed-split-until-contingent-switch rule.
-- Multiple SKUs sharing a scarce component in the daily-step loop, split by backlog proportion or, optionally, by margin priority.
-- Multiple customers competing for one SKU's scarce finished goods in the daily-step loop, served by priority override then FIFO by order date.
-- The plant's own periodic-review order-up-to reordering of a component, wired into the daily-step loop against the true on-hand-plus-on-order inventory position.
-- MOQ and per-lane weekly capacity caps on that reorder quantity, deferring an order to zero rather than placing a partial, sub-MOQ shipment.
-- A dual-sourced part's reorder split across every supplier's own lane, following the fixed split ratio or a contingent full switch to the backup, each supplier's share capped independently by its own lane.
-- A replication runner with entity-indexed common random numbers: independent, reproducible RNG substreams keyed by entity id and replication index, so the same entity draws the same numbers across two different scenario runs.
-- An MSER-5 warm-up truncation check, so a replication's early transient days can be discarded before averaging its output.
-- `tests/strategies.py` and a property-test tier (Hypothesis): composite strategies for schema-valid networks, part-supplier lists and id sets, checking invariants (allocation never exceeds request or availability, a capped order is always zero or at least the MOQ, a supplier split always accounts for the whole order, the state chassis is always sized from its network) across generated inputs, not just hand-picked examples.
-- Validation harnesses cross-checking the engine against two independent, external inventory/supply-chain libraries: `stockpyl` (case 3's (s, S) policy, against `stockpyl.ss.s_s_cost_discrete`'s own exact evaluation) and `SupplyNetPy` (a zero-lead-time (s, S) policy's service level, against classical continuous-review theory, across a genuinely different -- discrete-event, continuous-time -- simulator architecture).
-- A parametric synthetic network generator (`daysofcover.data.synthetic`) and a profiling script (`scripts/profile_engine.py`) measuring the daily-step engine's per-day wall-clock time on a network sized to the plan's ~40-node/25-part target, against its 200 ms target.
-- A generated `VALIDATION.md` (`scripts/generate_validation_report.py`), reproducing validation cases 1 to 6, 11, 12 and 13 with their actual numbers alongside each one's published reference and tolerance.
+**Simulation and operations**
+- Daily-step inventory-policy models covering continuous-review base-stock, periodic-review (R, S), and periodic-review (s, S).
+- Multi-node state representation for inventory and backlog, with BOM-constrained production, capacity limits, production queues and finished-goods allocation.
+- Per-lane shipment tracking with independently sampled lead times, configurable shipment crossing, weekly capacity constraints and minimum order quantities.
+- Disruption propagation across affected nodes and lanes, including partial capacity reduction, in-transit holds and production interruptions.
+- Recovery models for production-capacity ramp-up and shipment fulfilment lag.
+- Component replenishment using inventory position, supplier allocation ratios and contingent sourcing.
+- Distribution-tree routing for finished goods through modelled transport lanes and customer-facing nodes.
+- Reproducible replication streams with entity-indexed random numbers and an MSER-5 warm-up truncation utility.
+
+**Optimisation and analysis**
+- Aggregate linear programmes for disruption impact, maximum feasible coverage and minimum-cost inventory buffers, solved using SciPy/HiGHS.
+- Weekly time-indexed coverage analysis incorporating seasonal demand and inventory carry-forward.
+- AND/OR structural-dependency screening and value-weighted exposure ranking.
+- `daysofcover cover` CLI command comparing structural exposure with LP-estimated inventory cover, with optional starting-inventory input.
+- A reporting utility for comparing dynamic simulation results against an aggregate LP bound.
+
+**Validation and engineering**
+- Analytical and published-reference validation cases covering inventory policies, disruption behaviour, shipment dynamics, bullwhip effects and recovery.
+- Independent reference comparisons using stockpyl and SupplyNetPy.
+- Property-based tests for allocation, replenishment, sourcing and network-state invariants.
+- Deterministic synthetic-network generation and an engine-profiling utility.
+- Generated `VALIDATION.md` documenting measured reference comparisons, tolerances and validation boundaries.
+- ADR-008 documenting the choice of a daily-step NumPy engine over a process-oriented simulation framework.
 
 ### Changed
 
-- Replaced the state chassis's separately-maintained `on_order` array -- a shadow counter synced by hand at five call sites in the daily-step loop -- with `NetworkShipments.outstanding_at_node`, deriving on-order inventory on demand from the real per-shipment records instead of a second, driftable source of truth. Both reorder-position calculations in the daily-step loop now read the derived value.
-- Wired a scenario's named `Disruption`s into the real daily-step loop via a new `DisruptionState` module, resolved once per run against the network's own node and lane ids: a node-level disruption now cascades to every lane touching that node (a closed port stops every lane through it, per the build plan), a fully-down lane holds cargo already in transit instead of releasing it, a fully-down plant skips its own reorder decision and production entirely, and a partial severity fraction scales new order capacity and plant production capacity rather than closing anything outright. Previously, `Disruption` and `HazardGroup` were validated only against the standalone single-node reference in validation case 4 and had no effect on the multi-node engine at all.
-- Clarified `VALIDATION.md`'s intro paragraph (and the generator that writes it) to state plainly that every case there checks a standalone, single-purpose reference implementation, not the real multi-node engine -- which has its own unit and property test coverage but no external-reference validation yet; that is what the upcoming LP layer (cases 7 to 9) is for.
-- Added a real distribution layer (`daysofcover.engine.distribution`) and wired it into the daily-step loop: finished goods are now pushed from a plant down the network's own lanes -- a DC fanning out to several customers, each leg a real, capacitated, lead-timed `Lane` -- and each customer's order is fulfilled at their own node once goods have actually arrived there, rather than always against the plant's own on-hand with no lead time, lane or capacity limit. `build_distribution_tree` resolves the network's lanes into one plant's distribution tree up front (rejecting an ambiguous second path to the same node, per the LP layer's own tree assumption); the daily-step loop's new `distribution` parameter defaults to `None`, which keeps every earlier session's behaviour byte-for-byte unchanged, and a customer with no node on the tree still falls back to the plant directly. This closes a gap found while scoping the LP layer (cases 7 to 9): the schema and the seeded Moreton Marine network already described real distribution lanes that the engine never actually simulated.
-- Stage 2, first slice: a new `daysofcover.lp` package with the shared aggregate-LP-building machinery (`scipy.optimize.linprog`, HiGHS) and the impact and cover LPs (`solve_impact`, `solve_cover`), covering a removed node's or lane's downstream network -- flows, production, and lost sales, over a fixed or free horizon -- per the build plan's own formulation. A removed node takes every lane touching it with it; a removed lane leaves its two endpoints' own inventory untouched. Validated against validation cases 7 ("serial three-node chain, one node removed", exact hand-computed cover and impact) and 8 ("DES equals LP", the real multi-node engine run day by day under conditions -- deterministic demand and lead times, a disrupted inbound component lane rather than the outbound distribution lane -- chosen so nothing in the DES's own timing mechanics can introduce a gap against the LP's aggregate view; both cover and lost-sales agree with the LP exactly).
-- Stage 2, second slice: the buffer LP (`solve_buffer`), minimising the holding cost (`holding_cost_rate * unit_value` per node and commodity, unit value being a part's own unit cost or a SKU's cost basis) of the extra starting inventory needed to bring lost sales to exactly zero over a fixed horizon, on top of a removed element's own downstream network. When a node has no `holding_cost_rate` at all, the solver may place the added buffer there instead of at the costed demand node if a path with enough capacity exists -- a documented consequence of an unset rate reading as free, not a bug.
-- The AND/OR structural screen (`daysofcover.lp.structure.structural_convergence`), a pure graph-reachability check with no solver: an element is a chokepoint for a (customer, SKU) pair if removing it leaves every one of that SKU's BOM parts unable to reach, via some live plant, that customer -- an implementer's-call generalisation of the build plan's single-plant wording to networks with more than one live plant, collapsing to the plan's own wording when there is only one. Reports the value-weighted convergence fraction of (customer, SKU) pairs cut, using each pair's margin and demand rate from the undisrupted baseline so every candidate element is judged against the same fixed denominator.
-- The weekly time-indexed cover variant (`daysofcover.lp.weekly.solve_weekly_cover`), answering the flat aggregate model's own averaged-rate blind spot: a network that comfortably absorbs a year's *average* weekly demand can still run out mid-way through a real seasonal peak. Tracks ending inventory as an explicit per-week column carried forward week to week, using each SKU's own `weekly_multipliers` rather than an averaged daily rate, and finds cover by integer bisection on the number of weeks (at most six solves per start week, per the build plan), reporting the worst case over every possible start week and flagging when a network survives the full 32-week search cap rather than claiming a specific longer answer.
-- A `daysofcover cover` command, ranking every node and lane of a network by the structural screen's convergence fraction ("structure says") alongside the cover LP's own days of runway ("simulation says"), sorted by cover ascending. Takes an optional `--state` JSON file of starting on-hand inventory (`{node_id: {"part:<id>"|"sku:<id>": quantity}}`, loaded by the new `daysofcover.io.loaders.load_starting_inventory`); without one, every node starts at zero on-hand and a caveat is printed to stderr, since the network schema itself has no notion of current stock.
-- Validation case 9 ("DES >= LP in general"): on ordinary, undisrupted operation with a cold start and a real periodic-review order-up-to policy, the DES loses more sales (80 units over 14 days) than the LP's perfect-foresight, lead-time-free view predicts (40 units) -- a real, empirically-discovered 100% gap, not a hand-derived one, coming entirely from the ~5-day pipeline-fill lag the LP has no notion of at all. `daysofcover.lp.gap_report.format_gap_finding` renders that comparison as the build plan's own "the simulation's cost exceeds the LP bound by X%" finding, reused wherever DES and LP costs are compared side by side.
+- Derived outstanding inventory directly from shipment records rather than maintaining a duplicate on-order counter.
+- Integrated named scenario disruptions into the multi-node daily-step engine.
+- Extended fulfilment from direct plant allocation to optional, capacity-constrained outbound distribution routing.
+- Clarified validation documentation to distinguish component-level reference comparisons from end-to-end multi-node validation.
+- Refined aggregate LP demand accounting to include customer-held inventory and permit positive ending stock.
+- Expanded the aggregate LP to support inventory-buffer decisions and the structural and weekly analyses.
+- Updated CLI terminology to distinguish LP estimates from dynamic simulation results.
 
 ### Fixed
 
-- The aggregate LP's own folded demand-balance row used an equality between available supply (starting inventory plus net inflow) and demand at the tested horizon, which forced lost sales negative -- spuriously infeasible -- whenever supply exceeded demand, the ordinary case of nothing having run out yet. Validation cases 7 and 8 never caught this: both are single-customer, single-SKU networks whose optimal point happens to sit exactly on the boundary where an equality and the correct inequality agree. Found while exercising the new `daysofcover cover` command against the real 33-node, 6-customer Moreton Marine network, where several demand pairs pinned the tested horizon to different, non-coinciding ratios and made the equality spuriously infeasible across most of the network. Changed to the correct inequality, leaving any supply surplus as implicit ending inventory instead of a variable of its own.
+- Corrected the aggregate LP demand-balance formulation: the previous equality could make otherwise feasible networks appear infeasible when available supply exceeded demand. The inequality permits surplus ending inventory and is exercised by multi-customer test cases.
+
+### Known limitations
+
+- The hosted interface currently provides a technical preview rather than a complete scenario-analysis workflow.
+- Scenario execution and reporting are not yet exposed through the web API.
+- Automated mitigation-menu optimisation remains future work.
+- Published-reference comparisons do not yet establish independent end-to-end validation of the complete multi-node engine.
 
 ## [0.0.1] - 2026-09-26
 
 ### Added
 
-- Package skeleton with a `daysofcover --version` command.
-- Pre-commit hooks: ruff, gitleaks and the standard file checks.
-- `fast` CI workflow: lint, format, types, tests on Python 3.12 and 3.13, wheel build and smoke test, Docker image build and push to GHCR on `main`.
-- `full`, `nightly` and `release` CI workflows.
-- Project governance: licence, citation file, security policy, contributing guide, code of conduct, issue and pull request templates.
-- ADR-001 through ADR-007, and a Diataxis-shaped docs skeleton (tutorials, how-to, reference, explanation).
-- Schema v0: Pydantic models for the network, its mitigation options, a stress-test scenario and its results, all strict-mode and referentially validated.
-- A seeded, deterministic example network (Moreton Marine Systems, a fictional Brisbane marine-electronics manufacturer) and the generator that produces it.
-- A `daysofcover validate` command that checks a network file against the schema.
-- A hello-world Svelte front end and a FastAPI `/health` endpoint, both served from a single Docker image built in CI and deployed to Render.
+- Initial Python package and `daysofcover --version` command.
+- Strict Pydantic schemas for supply networks, scenarios, mitigation options and results.
+- Reproducible Moreton Marine Systems synthetic network and generator.
+- Network-validation CLI command.
+- Initial Svelte technical preview and FastAPI health endpoint, packaged in Docker and configured for Render.
+- Fast, full, nightly and release GitHub Actions workflows, including linting, typing, tests, build verification and container publishing.
+- Project governance files, pre-commit checks, architecture decision records and documentation structure.
 
 [Unreleased]: https://github.com/NathanTaylorOps/DaysofCover/compare/v0.0.1...HEAD
 [0.0.1]: https://github.com/NathanTaylorOps/DaysofCover/releases/tag/v0.0.1
