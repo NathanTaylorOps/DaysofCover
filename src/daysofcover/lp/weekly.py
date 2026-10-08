@@ -65,6 +65,7 @@ from daysofcover.models.network import Network
 class WeeklyCoverSolverError(RuntimeError):
     """An LP run ended without a reliable feasibility determination."""
 
+
 MAX_WEEKS_SEARCHED = 32
 WEEKS_PER_YEAR = 52
 
