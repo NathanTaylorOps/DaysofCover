@@ -21,17 +21,20 @@ from daysofcover.models.results import DailyOutcome, RunOutcome, ScenarioCompari
 from daysofcover.models.scenario import Disruption, Scenario
 
 
+MAX_BOUNDED_QUANTITY = 1_000_000_000.0
+
+
 class BoundedScenarioInput(StrictModel):
     plant_node_id: str
     sku_id: str
     component_part_id: str
-    initial_component_units: float = Field(ge=0, allow_inf_nan=False)
-    initial_finished_units: float = Field(default=0, ge=0, allow_inf_nan=False)
+    initial_component_units: float = Field(ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
+    initial_finished_units: float = Field(default=0, ge=0, le=MAX_BOUNDED_QUANTITY, allow_inf_nan=False)
     daily_demand_units: float = Field(ge=0, allow_inf_nan=False)
     horizon_days: int = Field(ge=1, le=90)
     production_capacity_per_week: float = Field(ge=0, allow_inf_nan=False)
     disruption_start_day: int = Field(ge=0)
-    disruption_duration_days: float = Field(gt=0, allow_inf_nan=False)
+    disruption_duration_days: float = Field(gt=0, le=90, allow_inf_nan=False)
     disruption_severity_fraction: float = Field(gt=0, le=1, allow_inf_nan=False)
     seed: int = Field(default=42, ge=0)
 
