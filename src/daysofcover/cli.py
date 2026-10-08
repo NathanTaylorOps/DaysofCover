@@ -100,7 +100,7 @@ def cover(
 
     For each element: the AND/OR structural screen's convergence
     fraction ("structure says") next to the cover LP's own days-of-cover
-    ("simulation says") -- the plan's own point being that these two
+    ("LP cover") -- the analytical distinction being that these two
     numbers often disagree, and cover is the one that matters (a 100%
     structural chokepoint that six weeks of stock absorbs easily versus
     a low-convergence single-source part with two weeks of cover). Sorted
@@ -144,7 +144,7 @@ def cover(
         return (0, cover_days)
 
     rows.sort(key=_sort_key)
-    typer.echo(f"{'element':<24}{'structure says':>18}{'simulation says':>20}")
+    typer.echo(f"{'element':<24}{'structure says':>18}{'LP cover':>20}")
     for element_id, convergence_fraction, cover_days in rows:
         if math.isnan(cover_days):
             cover_text = "error"
