@@ -28,8 +28,11 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from daysofcover import __version__
+from daysofcover.io.loaders import load_network
+from daysofcover.lp.structure import structural_convergence
 
 if sys.platform != "win32":
     import resource
@@ -39,6 +42,60 @@ else:  # pragma: no cover - exercised on the Windows dev machine only
 WEB_STATIC_DIR = Path(__file__).resolve().parent.parent / "web_static"
 
 app = FastAPI(title="daysofcover", version=__version__)
+
+EXAMPLE_NETWORK = (
+    Path(__file__).resolve().parent.parent / "data" / "examples" / "moreton_marine" / "network.json"
+)
+
+
+class ExposureRow(BaseModel):
+    element_id: str
+    element_type: str
+    convergence_fraction: float
+    affected_customer_sku_pairs: int
+
+
+class ExposureReport(BaseModel):
+    dataset: str
+    synthetic: bool
+    method: str
+    limitations: str
+    nodes: int
+    lanes: int
+    rows: list[ExposureRow]
+
+
+@app.get("/api/example/exposure", response_model=ExposureReport)
+def example_exposure() -> ExposureReport:
+    """Structural exposure of the bundled synthetic network; no LP or simulation."""
+    network = load_network(EXAMPLE_NETWORK)
+    rows: list[ExposureRow] = []
+    for element_id, element_type in [
+        *((node.id, "node") for node in network.nodes),
+        *((lane.id, "lane") for lane in network.lanes),
+    ]:
+        result = structural_convergence(network, removed_element_id=element_id)
+        rows.append(
+            ExposureRow(
+                element_id=element_id,
+                element_type=element_type,
+                convergence_fraction=result.convergence_fraction,
+                affected_customer_sku_pairs=len(result.cut_pairs),
+            )
+        )
+    rows.sort(key=lambda row: (-row.convergence_fraction, row.element_id))
+    return ExposureReport(
+        dataset="Moreton Marine Systems",
+        synthetic=True,
+        method="AND/OR bill-of-materials structural dependency screen",
+        limitations=(
+            "Structural reachability only; excludes inventory, capacity, timing "
+            "and financial impact."
+        ),
+        nodes=len(network.nodes),
+        lanes=len(network.lanes),
+        rows=rows,
+    )
 
 
 def _rss_mb() -> float | None:
