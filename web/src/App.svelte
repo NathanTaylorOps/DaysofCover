@@ -30,6 +30,8 @@
   let sortBy = $state<"exposure" | "element" | "pairs">("exposure");
   let sortDescending = $state(true);
 
+  const selectedVisible = $derived(selected !== null && filtered.some((row) => row.element_id === selected?.element_id && row.element_type === selected?.element_type));
+
   const filtered = $derived.by(() => {
     const rows = (report?.rows ?? []).filter(
       (row) =>
@@ -55,6 +57,11 @@
       sortBy = column;
       sortDescending = column !== "element";
     }
+  }
+
+  function clearFilters() {
+    filter = "all";
+    search = "";
   }
 
   function selectRow(row: ExposureRow) {
@@ -189,18 +196,18 @@
             <div class="panel-head"><div><h2>Dependency ranking</h2><p>Structural exposure of customer/SKU paths. Select column headings to sort.</p></div><span class="count">{filtered.length} ELEMENTS</span></div>
             <div class="controls"><div class="tabs" role="group" aria-label="Element type"><button class:active={filter === "all"} onclick={() => filter = "all"}>All</button><button class:active={filter === "node"} onclick={() => filter = "node"}>Nodes</button><button class:active={filter === "lane"} onclick={() => filter = "lane"}>Lanes</button></div><input aria-label="Search network elements" placeholder="Search ID or name…" bind:value={search} /></div>
             <div class="table-wrap"><table><thead><tr><th aria-sort={sortBy === "element" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("element")}>ELEMENT {sortBy === "element" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th>TYPE</th><th aria-sort={sortBy === "exposure" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("exposure")}>EXPOSURE {sortBy === "exposure" ? (sortDescending ? "↓" : "↑") : ""}</button></th><th class="right" aria-sort={sortBy === "pairs" ? (sortDescending ? "descending" : "ascending") : "none"}><button class="sort-button" onclick={() => setSort("pairs")}>AFFECTED PAIRS {sortBy === "pairs" ? (sortDescending ? "↓" : "↑") : ""}</button></th></tr></thead><tbody>
-              {#each filtered as row (row.element_id)}
-                <tr class:selected={selected?.element_id === row.element_id}>
+              {#each filtered as row (`${row.element_type}:${row.element_id}`)}
+                <tr class:selected={selected?.element_id === row.element_id && selected?.element_type === row.element_type}>
                   <td class="element"><button class="element-button" aria-pressed={selected?.element_id === row.element_id} onclick={() => selectRow(row)}>{row.element_id}</button>{#if elementLabel(row) !== row.element_id}<span class="element-label">{elementLabel(row)}</span>{/if}</td><td><span class="type">{row.element_type}</span></td>
                   <td><div class="exposure"><span class="bar-track"><span class="bar" style:width={percentage(row.convergence_fraction)}></span></span><span>{percentage(row.convergence_fraction)}</span></div></td>
                   <td class="right">{row.affected_customer_sku_pairs}</td>
                 </tr>
               {:else}
-                <tr><td colspan="4" class="empty">No matching elements.</td></tr>
+                <tr><td colspan="4" class="empty">No matching elements. <button class="clear-button" onclick={clearFilters}>Clear filters</button></td></tr>
               {/each}
             </tbody></table></div>
           </section>
-          <aside class="panel detail" aria-live="polite"><div class="eyebrow">ELEMENT INSPECTOR</div>{#if selected}<h2>{elementLabel(selected)}</h2>{#if elementLabel(selected) !== selected.element_id}<p class="detail-id">{selected.element_id}</p>{/if}<span class="type">{selected.element_type}</span><div class="detail-stat"><span>Structural exposure</span><strong>{percentage(selected.convergence_fraction)}</strong></div><div class="detail-stat"><span>Disconnected customer/SKU pairs</span><strong>{selected.affected_customer_sku_pairs}</strong></div><p>This screen tests whether qualified supply paths remain when the selected element is removed. It does not estimate when stock runs out.</p>{:else}<p>Select an element to inspect its dependency exposure.</p>{/if}</aside>
+          <aside class="panel detail" aria-live="polite"><div class="eyebrow">ELEMENT INSPECTOR</div>{#if selected && selectedVisible}<h2>{elementLabel(selected)}</h2>{#if elementLabel(selected) !== selected.element_id}<p class="detail-id">{selected.element_id}</p>{/if}<span class="type">{selected.element_type}</span><div class="detail-stat"><span>Structural exposure</span><strong>{percentage(selected.convergence_fraction)}</strong></div><div class="detail-stat"><span>Disconnected customer/SKU pairs</span><strong>{selected.affected_customer_sku_pairs}</strong></div><p>This screen tests whether qualified supply paths remain when the selected element is removed. It does not estimate when stock runs out.</p>{:else if selected}<p>The selected element is hidden by the current filters. Choose a visible element or <button class="clear-button" onclick={clearFilters}>clear filters</button> to inspect it.</p>{:else}<p>Select an element to inspect its dependency exposure.</p>{/if}</aside>
         </div>
         <section class="method"><strong>Methodology &amp; limitations</strong><p>{report.method}. {report.limitations} This is a synthetic example, not an assessment of an operating business.</p></section>
       {/if}
@@ -242,7 +249,7 @@
   .controls{display:flex;justify-content:space-between;gap:12px;padding:0 24px 20px}
   .tabs{display:flex;background:#f1f4f8;border-radius:6px;padding:3px}.tabs button{border:0;background:transparent;color:#65778b;padding:8px 13px;border-radius:5px;cursor:pointer;font-size:12px}.tabs button.active{background:#fff;color:#215e98;box-shadow:0 1px 4px #12243b1a;font-weight:700}
   input{border:1px solid #dce4ec;border-radius:6px;padding:9px 12px;min-width:0;width:205px;font-size:12px}
-  .table-wrap{overflow-x:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;color:#8a98a9;font-size:10px;letter-spacing:.8px;background:#f8fafc;padding:14px 23px;white-space:nowrap}td{padding:15px 23px;border-top:1px solid #edf0f4}tbody tr{cursor:default}tbody tr:hover,tbody tr.selected{background:#f0f6fc}.element{font-weight:700;color:#294d75;overflow-wrap:anywhere}.element-button{background:none;border:0;padding:4px 0;color:inherit;font-weight:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.element-label{display:block;color:#70849a;font-size:11px;font-weight:400;margin-top:4px;line-height:1.4}.detail-id{font-family:ui-monospace,monospace;font-size:11px!important;margin:0 0 12px!important;color:#73879d!important}.element-button:focus-visible,.sort-button:focus-visible,.tabs button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.sort-button{background:none;border:0;padding:0;color:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;cursor:pointer;text-align:inherit}.type{display:inline-block;text-transform:uppercase;font-size:10px;letter-spacing:.6px;background:#eaf0f6;color:#55718d;padding:5px 8px;border-radius:4px}.right{text-align:right}
+  .table-wrap{overflow-x:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:12px}th{text-align:left;color:#8a98a9;font-size:10px;letter-spacing:.8px;background:#f8fafc;padding:14px 23px;white-space:nowrap}td{padding:15px 23px;border-top:1px solid #edf0f4}tbody tr{cursor:default}tbody tr:hover,tbody tr.selected{background:#f0f6fc}.element{font-weight:700;color:#294d75;overflow-wrap:anywhere}.element-button{background:none;border:0;padding:4px 0;color:inherit;font-weight:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.element-label{display:block;color:#70849a;font-size:11px;font-weight:400;margin-top:4px;line-height:1.4}.clear-button{border:0;background:transparent;color:#215e98;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-weight:650;padding:4px}.clear-button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.detail-id{font-family:ui-monospace,monospace;font-size:11px!important;margin:0 0 12px!important;color:#73879d!important}.element-button:focus-visible,.sort-button:focus-visible,.tabs button:focus-visible{outline:2px solid #1e75bb;outline-offset:3px}.sort-button{background:none;border:0;padding:0;color:inherit;font-size:inherit;font-weight:inherit;letter-spacing:inherit;cursor:pointer;text-align:inherit}.type{display:inline-block;text-transform:uppercase;font-size:10px;letter-spacing:.6px;background:#eaf0f6;color:#55718d;padding:5px 8px;border-radius:4px}.right{text-align:right}
   .exposure{display:flex;gap:10px;align-items:center;min-width:150px}.exposure>span:last-child{min-width:43px;text-align:right;font-weight:650}.bar-track{height:7px;background:#e8edf3;border-radius:8px;flex:1;overflow:hidden}.bar{display:block;background:#3b82bc;height:100%;border-radius:8px}.empty{text-align:center;color:#7b8b9d;padding:32px}
   .detail{padding:25px;align-self:start}.detail h2{overflow-wrap:anywhere;margin:16px 0 12px;font-size:20px}.detail-stat{border-top:1px solid #e8edf3;margin-top:22px;padding-top:18px}.detail-stat span{display:block;font-size:11px;color:#78899b}.detail-stat strong{display:block;font-size:28px;margin-top:6px}.detail p{font-size:12px;color:#718399;line-height:1.8;margin-top:24px}
   .method{border-left:3px solid #397cb9;background:#eaf1f8;padding:18px 22px;margin-top:23px;border-radius:0 6px 6px 0}.method strong{font-size:12px}.method p{font-size:12px;color:#58718b;line-height:1.7;margin:8px 0 0}
