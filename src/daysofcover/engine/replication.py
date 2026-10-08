@@ -1,34 +1,14 @@
-"""A replication runner with entity-indexed common random numbers (CRN).
+"""Reproducible simulation replications using common random numbers.
 
-Every simulator in this package so far has taken a single ``rng`` and run
-once. Comparing two scenarios fairly -- two reorder policies, say, or a
-network with and without a disruption -- needs many independent
-replications of each, and it needs the *same* entity (the same lane, the
-same customer's demand stream) to draw the *same* random numbers at the
-same replication index in both scenarios, so that any difference in the
-results is the policy's effect, not a fluke of which random numbers a
-lane happened to draw this time. That is the standard variance-reduction
-technique of common random numbers (CRN), and the "entity-indexed" part
-is what makes it work across two scenario calls that do not necessarily
-share a code path: each entity gets its own independent substream, keyed
-by the entity's own id rather than by its position in whatever list the
-caller happened to build for that particular scenario.
+Entity-specific NumPy random generators are derived from a master seed,
+replication index and stable entity identifier. The same entity therefore
+receives the same random stream across comparable scenarios, regardless
+of iteration order or the presence of unrelated entities.
 
-:func:`entity_rngs` derives that keying from :class:`numpy.random.
-SeedSequence`: a master ``seed``, a replication index, and an entity id
-are hashed together into a fresh seed sequence, so the same three
-inputs always produce the same generator, however many other entities
-are in the call or what order they come in. :func:`run_replications` is
-the loop around it: call a caller-supplied ``scenario`` function once
-per replication, each time handing it a fresh dict of per-entity
-generators built the same way.
-
-This module knows nothing about the daily-step engine itself --
-``scenario`` can be any callable that accepts a replication index and a
-dict of generators and returns whatever result the caller wants
-collected. That keeps it reusable for single-node spikes, the full
-multi-node loop, or anything else that needs independently seeded
-replications across named entities.
+Common random numbers reduce noise in scenario comparisons by holding
+matched sources of randomness consistent. The replication runner accepts
+a caller-supplied scenario function and does not depend on a particular
+simulation engine.
 """
 
 from __future__ import annotations
