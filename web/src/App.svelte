@@ -283,7 +283,7 @@
   @media print {
     :global(body){background:white!important;color:#17253a}
     .shell{display:block;min-height:0}
-    .sidebar,.topbar,.controls,.sort-button,.clear-button{display:none!important}
+    .sidebar,.topbar,.controls,.clear-button{display:none!important}
     .content{max-width:none;padding:0 12mm}
     .analysis-layout{display:block}
     .ranking,.detail,.metric{box-shadow:none;break-inside:avoid}
