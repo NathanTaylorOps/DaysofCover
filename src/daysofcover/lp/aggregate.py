@@ -597,6 +597,16 @@ def solve_buffer(
     if not math.isfinite(horizon_days) or horizon_days < 0:
         raise ValueError("horizon_days must be a finite, non-negative number")
     resolved = _resolve(network, removed_element_id=removed_element_id)
+    missing_rates = sorted(
+        node_id
+        for node_id in resolved.node_ids
+        if node_id not in resolved.holding_cost_rate_by_node
+    )
+    if missing_rates:
+        raise ValueError(
+            "buffer optimisation requires holding_cost_rate for every active node; "
+            "missing: " + ", ".join(missing_rates)
+        )
     builder, columns = _build(
         resolved, starting_inventory=starting_inventory, t_fixed=horizon_days, buffer=True
     )
