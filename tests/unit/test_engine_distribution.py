@@ -495,3 +495,43 @@ def test_fully_down_distribution_lane_holds_cargo_instead_of_releasing_it() -> N
     assert shipped == 0.0
     assert state.finished_on_hand[plant_idx, sku_idx] == 50.0
     assert state.finished_on_hand[cust_idx, sku_idx] == 0.0
+
+
+def test_multiday_distribution_conserves_stock_across_nodes_and_transit() -> None:
+    """A fixed finished-goods supply is never created or lost during multi-hop transit."""
+    network = _fan_out_network(dc_cust_b_capacity=10.0)
+    state = NetworkState.from_network(network)
+    shipments = NetworkShipments.from_network(network)
+    rng = np.random.default_rng(seed=7)
+    tree = build_distribution_tree(network, plant_node_id="plant-1")
+    # This routing-only fixture intentionally has no SKU schema; use an explicit
+    # stock column for the SKU under test.
+    sku_id = "sku-a"
+    state.finished_on_hand = np.zeros((len(network.nodes), 1))
+    state.finished_backlog = np.zeros((len(network.nodes), 1))
+    state.sku_ids = [sku_id]
+    state.finished_on_hand[state.node_index("plant-1"), 0] = 90.0
+    state.finished_backlog[state.node_index("cust-a"), 0] = 60.0
+    state.finished_backlog[state.node_index("cust-b"), 0] = 30.0
+
+    for day in range(12):
+        push_finished_goods(
+            state=state,
+            shipments=shipments,
+            tree=tree,
+            sku_id=sku_id,
+            current_day=day,
+            rng=rng,
+        )
+        on_hand = float(state.finished_on_hand.sum())
+        in_transit = sum(
+            lane.outstanding(part_id=sku_id) for lane in shipments.lanes.values()
+        )
+        assert on_hand + in_transit == pytest.approx(90.0)
+        assert np.all(state.finished_on_hand >= -1e-8)
+        if day == 0:
+            assert in_transit == pytest.approx(90.0)
+        if day == 1:
+            assert state.finished_on_hand[state.node_index("cust-a"), 0] == 0.0
+        if day >= 2:
+            assert state.finished_on_hand[state.node_index("cust-a"), 0] > 0.0
